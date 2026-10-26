@@ -419,3 +419,124 @@ considered. Newest entries go at the bottom.
     re-sorted.
 - **Not explained:** one scripted run exited with code 1 before creating its
   meeting folder, with stderr discarded. Five identical reruns succeeded.
+
+## D23. One implementation behind the CLI and the desktop app
+
+- **Decision:** a `sakshi-app` crate holds what both front ends do:
+  processing a meeting end to end (finish an interrupted capture, run the
+  pipeline, index), creating a recording's folder, settings and language
+  resolution, and MCP client setup. The pipeline reports progress through
+  an observer (`Pipeline::with_observer`, one `StageEvent` per stage
+  transition); the CLI prints it and the app forwards it to the window.
+- **Why:** the CLI had grown this logic inline. Two copies would drift,
+  and the app needs progress the CLI never exposed.
+- **Alternatives:** the app shelling out to `sakshi-cli` and parsing its
+  output; polling `pipeline.json` for progress.
+
+## D24. Desktop app structure
+
+- **Decision:** Tauri 2 with a React UI. The Rust side is a `Backend` with
+  plain methods; `main.rs` only wraps them as commands, run on blocking
+  threads because they touch the disk, SQLite, and the capture APIs.
+  - Recording runs on its own thread, which owns the platform recording
+    (it can't move between threads) and is controlled through a channel.
+    When capture ends, whether stopped or interrupted, the meeting goes to
+    the processing queue.
+  - Processing runs one meeting at a time on a worker thread, so a long
+    transcription never blocks recording the next call. A meeting already
+    queued isn't queued twice.
+  - The backend talks to the window through one event, `sakshi`, whose
+    `kind` is `recorder`, `job`, `download`, or `meetings_changed`.
+  - Key frames and recordings are shown straight from the meeting folders
+    through Tauri's asset protocol. Its scope is the meetings folder, plus
+    a meeting folder elsewhere when that meeting is opened.
+  - The window gets only `core:default` permissions and a CSP that allows
+    the asset protocol for images and media. Opening links and Finder goes
+    through backend commands; `open_link` accepts `https://` only.
+  - Tests use a fake capture backend and a fake processor. An ignored live
+    test drives the real recorder and pipeline.
+- **Why:** keeping the backend free of Tauri types lets the record, stop,
+  process, and index flow be tested without a window, and keeps the UI a
+  thin view of state the backend owns.
+- **Alternatives:** one thread per command with the recording in a global;
+  running the pipeline inside the recording thread (blocks the next
+  recording); granting the window the opener plugin's permissions.
+
+## D25. MCP setup helper: writes JSON configs, prints the rest
+
+- **Decision:** `sakshi-cli mcp setup` and the app's Connect page show
+  each client's status and the exact snippet. For Claude Desktop and
+  Cursor, whose configs are plain JSON files, Sakshi can add itself:
+  - it refuses a file that isn't valid JSON;
+  - it keeps every other key, server, and the key order, and keeps extra
+    fields on an existing `sakshi` entry (such as `env`);
+  - it backs up the old file as `<name>.sakshi-backup-<time>`;
+  - it writes through a symlinked config and keeps the file's permissions.
+
+  For Claude Code it shows `claude mcp add --scope user sakshi -- <path>`.
+  For Codex it shows the `[mcp_servers.sakshi]` TOML table. `--data-dir`
+  is passed only when the data folder isn't the default, because clients
+  don't pass on `SAKSHI_DATA_DIR`.
+- **Why:** `~/.claude.json` belongs to Claude Code, which rewrites it
+  while running, and its own command is the supported way in. Editing
+  Codex's TOML safely needs a format-preserving TOML editor, a dependency
+  this didn't justify. A wrong edit to a client's config breaks that
+  client, hence the backup and the refusals.
+- **Alternatives:** writing every client's config; only printing snippets.
+
+## D26. The window list includes windows that aren't on screen
+
+- **Decision:** the source list asks ScreenCaptureKit for all windows, not
+  only on-screen ones, and marks each with `on_screen`. A window that isn't
+  on screen is listed only if it has a title, is at least 400x300, and
+  isn't a system process or an XPC helper (such as the Save panel). The UI
+  shows such windows in their own group. A Zoom window counts as a meeting
+  only when its title mentions a meeting or webinar.
+- **Why:** with on-screen windows only, a call on another desktop, a
+  full-screen call (which gets its own desktop), or a minimized one could
+  not be picked. Found by the user in the first desktop run. Zoom keeps
+  its home window ("Zoom Workplace") and others open between calls, and
+  those were all being flagged as meetings.
+- **Open:** what a window records while it is minimized or on another
+  desktop hasn't been checked live yet. macOS may deliver no new frames
+  until the window is visible again; audio is unaffected.
+- **Alternatives:** on-screen windows only, with a hint to bring the call
+  forward.
+
+## D27. Desktop UI toolchain and conventions
+
+- **Decision:** React 19, Vite 8, and TypeScript 7 with no UI library. One
+  stylesheet with CSS variables follows the system's light or dark mode.
+  pnpm 12 installs packages; a committed `.npmrc` points at the public
+  npm registry, and CI pins the pnpm version. The window's location is
+  kept in the URL hash (`#/meetings/<id>`), so a reload returns to the
+  same page.
+- **Why:** the UI is five pages of forms, lists, and a video player, which
+  needs no component library. The `.npmrc` keeps a machine's private
+  registry settings out of the build. pnpm 12 couldn't record its own
+  version pin in the lockfile here, which made `--frozen-lockfile` fail,
+  so the `packageManager` field was dropped.
+- **Alternatives:** a component library; npm; a router library.
+
+## D28. Desktop app verification (macOS 27, Apple Silicon, 2026-10-26)
+
+- **Decision:** M4 ships after these checks:
+  - Every page was opened in the real app (`pnpm tauri dev`) on a scratch
+    data folder and screenshotted, capturing the Sakshi window only:
+    - Record: window list from ScreenCaptureKit, setup check.
+    - Meetings: list with statuses, transcript, video over the asset
+      protocol.
+    - Models: both default models detected.
+    - Connect: client status and snippets.
+    - Settings: language list read from the model, tool checks.
+  - The live backend test recorded the app's own window for 5 s on the
+    recording thread. The queue then finalized, ran all seven stages, and
+    indexed it: 5.7 s, 1 key frame, 0 segments (silent window, mic off).
+  - `pnpm tauri build` produced an app bundle.
+- **Found and fixed:** windows on other desktops or minimized were missing
+  (D26). The window scrolled as a whole and cut off the sidebar. Long paths
+  widened pages past the window. Spacing was too tight in several places.
+- **Not checked by hand:** clicking through the consent dialog, a model
+  download, and "Add Sakshi to Claude Desktop" in the window. No UI
+  automation is available here; the backend paths behind them have unit
+  tests, and downloads were verified from the CLI in M1.

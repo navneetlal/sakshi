@@ -24,7 +24,7 @@ through Sakshi's `save_summary` tool.
 | M1 | `sakshi-cli process <folder>` on existing recordings | done |
 | M2 | SQLite store and MCP server | done |
 | M3 | macOS capture (`sakshi-cli record`) | done |
-| M4 | Desktop app (Tauri 2) | planned |
+| M4 | Desktop app (Tauri 2) | done |
 | M5 / M6 | Windows / Linux capture | planned |
 
 Design decisions and measurements are in [DECISIONS.md](DECISIONS.md).
@@ -52,6 +52,41 @@ Models, settings, and the meeting index (`sakshi.db`) live in the data
 directory: `Sakshi/` under your platform's application data folder, or
 `$SAKSHI_DATA_DIR`, or `--data-dir`. Meeting folders stay where they are;
 the index points at them.
+
+### The desktop app
+
+Needs Node.js 24 and pnpm, plus steps 1 and 4 above (the app uses the
+sidecar from `target/sidecars/` and the `sakshi-mcp` built next to it).
+
+```bash
+cd apps/sakshi-desktop
+pnpm install
+pnpm tauri dev          # builds and opens the app; the UI reloads as you edit
+```
+
+- **Record:** pick a window or display (likely meetings first, then other
+  windows, including minimized ones and those on other desktops), choose
+  the app's audio and your microphone, and start. A timer runs while
+  recording. Stopping hands the meeting to processing, shown step by step.
+- **Meetings:** search titles and transcripts; open a meeting to see the
+  video, the transcript with speakers (click a time to play from there),
+  key frames, and summaries saved by AI clients. Process again with
+  another language, or process a recording that never was.
+- **Models:** download the default models after accepting their license,
+  with progress; add a GGUF model from any Hugging Face repository.
+- **Connect:** each AI client's status and setup snippet. Sakshi can add
+  itself to Claude Desktop's and Cursor's config files, backing them up
+  first.
+- **Settings:** transcription language, the consent reminder, the data
+  folder, and whether ffmpeg, the speech engine, and the models are found.
+
+When run with `pnpm tauri dev`, macOS attributes Screen Recording and
+Microphone access to your terminal app, as with the CLI.
+`pnpm tauri build --bundles app` produces `Sakshi.app`, but it doesn't
+bundle ffmpeg, the speech engine, or `sakshi-mcp` yet; that comes with
+packaging. Until then, run its binary from a terminal with
+`SAKSHI_FFMPEG`, `SAKSHI_NEMO_SPEECH`, and `SAKSHI_MCP_BIN` pointing at
+them.
 
 ### Recording a call (macOS 14+)
 
@@ -121,6 +156,7 @@ sakshi-cli config show
 sakshi-cli config language <auto|code> [--meeting <folder>]
 sakshi-cli config consent-reminder <on|off>
 sakshi-cli record [--list] [--window <id> | --display <id> | --app <text>] [...]
+sakshi-cli mcp setup [--client <name> [--write]] [--server <path>]
 ```
 
 The language defaults to automatic detection. A code you pin is checked
@@ -144,6 +180,15 @@ whether or not anything else is running. It only reads, except for
 | `save_summary(meeting_id, markdown, title?, author_model?)` | Stores a summary the client wrote |
 | `list_summaries(meeting_id)` | Saved summaries with their Markdown |
 
+The quickest setup is the app's Connect page, or:
+
+```bash
+sakshi-cli mcp setup                                   # every client: status and what to add
+sakshi-cli mcp setup --client claude-desktop --write   # or cursor: edits the config, after a backup
+```
+
+It fills in the path to `sakshi-mcp` and your data folder. By hand:
+
 **Claude Desktop** (`claude_desktop_config.json`) and **Cursor**
 (`~/.cursor/mcp.json`):
 
@@ -155,7 +200,7 @@ whether or not anything else is running. It only reads, except for
 }
 ```
 
-**Claude Code:** `claude mcp add sakshi -- /absolute/path/to/sakshi-mcp`
+**Claude Code:** `claude mcp add --scope user sakshi -- /absolute/path/to/sakshi-mcp`
 
 **Codex** (`~/.codex/config.toml`):
 
@@ -198,7 +243,10 @@ Sortformer diarization); anything else is rejected before download.
 cargo test                                  # unit, integration, and MCP protocol tests (need ffmpeg)
 cargo test -p sakshi-cli -- --ignored       # end to end with the real sidecar and models
 cargo test -p sakshi-models -- --ignored    # Hugging Face network checks
+cargo test -p sakshi-desktop -- --ignored   # records the running app's window, then processes it (macOS)
+(cd apps/sakshi-desktop && pnpm run build)  # type-check and build the UI
 cargo xtask fixtures                        # regenerate fixtures/ from pinned sources
+cargo xtask icon                            # redraw the app icon's source image
 ```
 
 The fixtures are a 60 s English meeting from the AMI corpus and a two-speaker
@@ -218,11 +266,16 @@ Hindi clip from FLEURS, both CC BY 4.0. See
 - Word confidence is always 1.0 with this model.
 - Short mic segments ("yeah", "okay") are never treated as bleed, so a
   one-word echo of the remote side can remain.
+- A window that is minimized or on another desktop can be picked, but
+  macOS may not deliver new video frames for it until it's visible again
+  (not yet checked live; DECISIONS.md D26). Audio is unaffected.
+- The desktop app doesn't bundle its helper programs yet (see above).
 
 ## Planned
 
-- Desktop app with a window picker and an MCP setup helper (M4), then
-  Windows and Linux capture.
+- Windows and Linux capture (M5, M6).
+- Packaging: the app bundle with an LGPL FFmpeg build, the speech engine,
+  and `sakshi-mcp` inside.
 - **Converting NeMo checkpoints to GGUF**, so `.nemo` fine-tunes from Hugging
   Face can be added as custom models. Today only ready-made GGUF files are
   accepted.
