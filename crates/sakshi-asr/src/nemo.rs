@@ -83,6 +83,11 @@ impl NemoSpeech {
             "--stream".into(),
             "--asr.streaming.rnnt_right_context".into(),
             RIGHT_CONTEXT.to_string().into(),
+            // Finalize each utterance at a pause. Without this the whole
+            // file is one final whose words are tagged only at the end, when
+            // the diarizer no longer holds the early frames: on a 60 min
+            // meeting the first 48 min all got one speaker (D13).
+            "--endpointing".into(),
             "--language".into(),
             language.into(),
             "--device".into(),
@@ -265,7 +270,7 @@ mod tests {
             args.join(" "),
             "transcribe /w/system.wav --model /m/asr.gguf \
              --diar-model /m/diar.gguf --diar-preset v3-offline \
-             --stream --asr.streaming.rnnt_right_context 13 \
+             --stream --asr.streaming.rnnt_right_context 13 --endpointing \
              --language auto --device auto \
              --format json --output /w/system.nemo.json --force"
         );

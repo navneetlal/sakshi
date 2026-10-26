@@ -147,8 +147,13 @@ fn hindi_meeting_auto_detects_and_separates_speakers() {
         "{}",
         t.segments[1].text
     );
-    // Streaming mode doesn't report the detected language (DECISIONS D10).
-    assert!(t.languages.is_empty());
+    // Streaming mode reports the detected language only sometimes
+    // (DECISIONS D10); if it does, it must be Hindi.
+    assert!(
+        t.languages.iter().all(|l| l.starts_with("hi")),
+        "{:?}",
+        t.languages
+    );
 
     // Pinning the language redoes transcription and records the pin.
     let stdout = process(dir.path(), &["--language", "hi"]);

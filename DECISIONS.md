@@ -103,9 +103,9 @@ considered. Newest entries go at the bottom.
   nemo-speech transcribe <work>/system.wav \
     --model <models>/…/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf \
     --diar-model <models>/…/Nemotron-3-Diarization.q8_0.gguf --diar-preset v3-offline \
-    --stream --asr.streaming.rnnt_right_context 13 \
+    --stream --asr.streaming.rnnt_right_context 13 --endpointing \
     --language <auto|code> --device auto \
-    --format json --output <work>/system.nemo.json --force
+    --format json --output <work>/system.engine.json --force
   ```
 
   `mic` track: the same without `--diar-model` and `--diar-preset`.
@@ -163,10 +163,11 @@ considered. Newest entries go at the bottom.
 - **Why:** the runtime looks codes up by exact match and silently falls
   back to auto-detection for anything unknown, so a typo would quietly do
   the wrong thing. In streaming mode v0.2.0 transcribes Hindi correctly under
-  `auto`, but reports no detected language (`"languages": []`) and drops the
-  final sentence punctuation. The offline path reports both but is less
-  accurate (D9), so for now an auto-detected meeting has an empty language
-  list.
+  `auto`, but reports a language only for utterances that end in sentence
+  punctuation (the tag follows it). So a long meeting usually lists its
+  language (`en-US` for the 60 min AMI run), while the short fixtures list
+  none (`"languages": []`). The offline path reports it reliably but is less
+  accurate (D9). Treat the list as best-effort.
 - **Alternatives:** a second, offline pass over a short excerpt just to read
   the detected language (about 3 s extra per track); guessing from the script
   of the text (Devanagari alone doesn't distinguish Hindi from Marathi or
@@ -213,3 +214,29 @@ considered. Newest entries go at the bottom.
 - **Alternatives:** segment-level only (misses mixed segments); dropping
   every matched word (a user repeating a word the remote just said would
   lose it); acoustic echo cancellation during capture (M3+, complementary).
+
+## D13. `--endpointing` is required for long meetings
+
+- **Decision:** both transcribe calls pass `--endpointing`, so the runtime
+  finalizes each utterance at a pause (800 ms by default) instead of
+  returning the whole file as one result.
+- **Why:** measured on 60 min of AMI EN2002d (four speakers) on Apple Silicon
+  with Metal:
+
+  | `system` command | Speakers tagged | Wall time | Peak RSS |
+  |---|---|---|---|
+  | without `--endpointing` | one label for every word in the first 48 min | 170 s | 1.5 GB |
+  | with `--endpointing` | four speakers throughout; 93% of words match standalone `nemo-speech diarize` | 193 s | 1.5 GB |
+
+  Without endpointing, words are tagged only when the single final result
+  is built at the end of the file. By then the diarizer apparently no
+  longer holds the frames for most of the recording, so they all fall back
+  to one label. Clips of 5 and 15 min were unaffected. With endpointing,
+  each utterance is tagged while its frames are still in memory. The
+  transcript itself was unaffected: 8,778 words against 8,769, and
+  identical text on the 60 s fixture. Standalone diarization of the same
+  hour took 21 s.
+- **Alternatives:** separate `nemo-speech diarize` plus our own
+  word-to-speaker overlap merge (works too, and remains the fallback if a
+  later runtime regresses); cutting audio into chunks (speaker numbers
+  would not carry across chunks).
