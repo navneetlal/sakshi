@@ -12,5 +12,5 @@ pub use error::Error;
 pub use json::{read_json, write_json_atomic};
 pub use language::Language;
 pub use layout::{DataDir, MeetingDir};
-pub use meeting::{Frame, MeetingInfo, Settings};
+pub use meeting::{Frame, MeetingInfo, Settings, Summary};
 pub use transcript::{Segment, Speaker, Track, Transcript, Word};

@@ -7,6 +7,9 @@ use crate::Language;
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MeetingInfo {
+    /// Assigned when the meeting is first indexed, so the folder keeps its
+    /// identity if it moves.
+    pub id: Option<String>,
     pub title: Option<String>,
     /// RFC 3339 start time of the recording.
     pub started_at: Option<String>,
@@ -20,6 +23,20 @@ pub struct MeetingInfo {
 pub struct Settings {
     /// Default transcription language for every meeting.
     pub language: Language,
+}
+
+/// A summary written by an MCP client and saved through Sakshi. Sakshi
+/// stores summaries; it never writes them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Summary {
+    pub id: String,
+    pub meeting_id: String,
+    pub title: Option<String>,
+    /// The model that wrote it, as the client reported.
+    pub author_model: Option<String>,
+    /// RFC 3339.
+    pub created_at: String,
+    pub markdown: String,
 }
 
 /// A key frame extracted from `recording.mp4`.

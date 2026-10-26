@@ -106,6 +106,9 @@ pub struct Segment {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transcript {
     pub schema_version: u32,
+    /// Length of the longest audio track.
+    #[serde(default)]
+    pub duration_ms: u64,
     /// Languages the recognizer reported, e.g. `["en-US"]`.
     pub languages: Vec<String>,
     /// Segments from both tracks, ordered by start time.

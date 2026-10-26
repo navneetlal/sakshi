@@ -240,3 +240,35 @@ considered. Newest entries go at the bottom.
   word-to-speaker overlap merge (works too, and remains the fallback if a
   later runtime regresses); cutting audio into chunks (speaker numbers
   would not carry across chunks).
+
+## D14. The database indexes meeting folders; the folders stay the truth
+
+- **Decision:**
+  - `sakshi.db` (SQLite in WAL mode, bundled SQLite 3.54 with FTS5) indexes
+    processed meeting folders wherever they are, by absolute path. It holds
+    meeting metadata, segments with their words, frames, and summaries.
+  - A meeting gets a UUIDv7 id the first time it is indexed, written to its
+    `meeting.json`, so a moved folder keeps its id.
+  - Summaries live in `summaries/<id>.md` with a small JSON front matter
+    block, so the database can be rebuilt from the folders, summaries
+    included.
+  - Search uses an FTS5 trigram index. Queries under three characters fall
+    back to a LIKE scan.
+- **Why:** recordings are large; indexing in place avoids copying them, and
+  a lost or corrupt database costs nothing. Word tokenizers split
+  Devanagari words at vowel signs, while trigrams match substrings in any
+  script ("उच्चार" finds "उच्चारण"). Bundling SQLite gives every
+  platform the same version and FTS5; Windows ships no system SQLite.
+- **Alternatives:** copying meetings into `<data>/meetings/<id>/` on import
+  (planned for recordings Sakshi captures itself, M3); a `unicode61`
+  tokenizer; storing summaries only in the database.
+
+## D15. The MCP server writes nothing but summaries
+
+- **Decision:** the server opens the database twice: `Store::open_read_only`
+  (read-only flags plus `query_only`) for every query, and `SummaryWriter`,
+  whose only operation is saving a summary. Neither can create or migrate
+  the database; `sakshi-cli` owns the schema.
+- **Why:** the spec's rule ("read-only except for summary writes") becomes
+  structural instead of a convention, so a bug in a query tool cannot write.
+- **Alternatives:** one read-write connection used carefully.

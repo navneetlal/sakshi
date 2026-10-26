@@ -254,24 +254,24 @@ impl<'a> Pipeline<'a> {
 
     fn save(&self, meeting: &MeetingDir) -> Result<Option<String>, PipelineError> {
         let segments: Vec<Segment> = read_json(&work(meeting, "segments.clean.json"))?;
+        let mut reported = Vec::new();
+        let mut duration_ms = 0;
+        for track in [Track::System, Track::Mic] {
+            let raw: RawTranscript = read_json(&work(meeting, &format!("{track}.words.json")))?;
+            duration_ms = duration_ms.max(raw.duration_ms);
+            for language in raw.languages {
+                if !reported.contains(&language) {
+                    reported.push(language);
+                }
+            }
+        }
         let languages = match &self.config.language {
             Language::Code(code) => vec![code.clone()],
-            Language::Auto => {
-                let mut reported = Vec::new();
-                for track in [Track::System, Track::Mic] {
-                    let raw: RawTranscript =
-                        read_json(&work(meeting, &format!("{track}.words.json")))?;
-                    for language in raw.languages {
-                        if !reported.contains(&language) {
-                            reported.push(language);
-                        }
-                    }
-                }
-                reported
-            }
+            Language::Auto => reported,
         };
         let transcript = Transcript {
             schema_version: Transcript::SCHEMA_VERSION,
+            duration_ms,
             languages,
             segments,
         };
