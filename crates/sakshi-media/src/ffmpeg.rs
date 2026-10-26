@@ -51,8 +51,9 @@ impl Ffmpeg {
         &self.path
     }
 
-    /// A command with Sakshi's standard flags: no prompts, errors only.
-    pub(crate) fn command(&self) -> Command {
+    /// A command with Sakshi's standard flags: no prompts, errors only,
+    /// stdin closed.
+    pub fn command(&self) -> Command {
         let mut cmd = Command::new(&self.path);
         cmd.args(["-hide_banner", "-nostdin", "-loglevel", "error"])
             .stdin(Stdio::null());
