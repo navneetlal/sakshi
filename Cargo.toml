@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/sakshi-cli", "xtask"]
+members = ["crates/*", "apps/sakshi-cli", "apps/sakshi-mcp", "xtask"]
 
 [workspace.package]
 version = "0.1.0"
