@@ -700,7 +700,7 @@ button:focus-visible {
 
 .split {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: clamp(230px, 30%, 300px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
@@ -712,7 +712,7 @@ button:focus-visible {
 }
 .detail-pane {
   overflow: auto;
-  padding: 32px 36px 56px;
+  padding: 32px clamp(20px, 3vw, 36px) 56px;
   min-width: 0;
 }
 .empty,
@@ -759,10 +759,13 @@ button:focus-visible {
 .meeting {
   max-width: 900px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
 }
+/* The actions move under the title when the pane is narrow. */
 .meeting-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
@@ -770,12 +773,14 @@ button:focus-visible {
 .meeting-header > div:first-child {
   display: grid;
   gap: 8px;
+  flex: 1 1 320px;
+  min-width: 0;
 }
 .header-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  flex-shrink: 0;
 }
 .speakers {
   display: flex;
@@ -916,9 +921,34 @@ button:focus-visible {
 
 /* Models */
 
+/* Fixed proportions: cells wrap instead of pushing the table past the
+   card at narrow widths. */
 table.models {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+table.models th:nth-child(1) {
+  width: 30%;
+}
+table.models th:nth-child(2) {
+  width: 17%;
+}
+table.models th:nth-child(3) {
+  width: 13%;
+}
+table.models th:nth-child(4) {
+  width: 21%;
+}
+table.models th:nth-child(5) {
+  width: 19%;
+}
+table.models th:last-child,
+table.models td:last-child {
+  padding-right: 0;
+}
+table.models td {
+  overflow-wrap: anywhere;
 }
 table.models th {
   text-align: left;
@@ -932,7 +962,6 @@ table.models td {
   border-top: 1px solid var(--border);
   vertical-align: top;
 }
-table.models td:nth-child(2),
 table.models td:nth-child(3) {
   white-space: nowrap;
 }
@@ -941,15 +970,15 @@ table.models td:first-child > div + div {
 }
 .status-cell {
   text-align: right;
-  min-width: 170px;
 }
 .download {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   justify-items: end;
 }
 .download .progress {
-  width: 150px;
+  width: 100%;
+  max-width: 150px;
 }
 
 dl.facts {

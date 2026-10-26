@@ -533,9 +533,16 @@ considered. Newest entries go at the bottom.
     recording thread. The queue then finalized, ran all seven stages, and
     indexed it: 5.7 s, 1 key frame, 0 segments (silent window, mic off).
   - `pnpm tauri build` produced an app bundle.
-- **Found and fixed:** windows on other desktops or minimized were missing
-  (D26). The window scrolled as a whole and cut off the sidebar. Long paths
-  widened pages past the window. Spacing was too tight in several places.
+- **Found and fixed:**
+  - Windows on other desktops or minimized were missing (D26).
+  - The window scrolled as a whole and cut off the sidebar.
+  - Long paths widened pages past the window.
+  - The models table pushed its status badges outside the card.
+  - At the minimum window size (860x560), the meeting header crushed the
+    title.
+  - Spacing was too tight in several places.
+
+  Each page was rechecked at the default and the minimum window size.
 - **Not checked by hand:** clicking through the consent dialog, a model
   download, and "Add Sakshi to Claude Desktop" in the window. No UI
   automation is available here; the backend paths behind them have unit
