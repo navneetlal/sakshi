@@ -272,3 +272,42 @@ considered. Newest entries go at the bottom.
 - **Why:** the spec's rule ("read-only except for summary writes") becomes
   structural instead of a convention, so a bug in a query tool cannot write.
 - **Alternatives:** one read-write connection used carefully.
+
+## D16. MCP tool behaviour
+
+- **Decision:** the eight tools from the spec on rmcp 3.7:
+  - **Errors:** bad input (malformed or unknown ids, inverted or
+    out-of-range times, oversized limits, empty queries) comes back as a
+    tool result with `isError` and a sentence saying what to do, not as a
+    protocol error.
+  - **Hints:** every tool but `save_summary` is annotated read-only and
+    closed-world.
+  - **`get_transcript`:** pages by both segment count (400) and text size
+    (40,000 characters), resuming from an opaque `next_cursor`. Each segment
+    carries the `frame_id` on screen when it started. `format: "text"` gives
+    one line per segment with markers where the screen changed.
+  - **Frames:** `get_frames` returns at most 16 JPEGs spread evenly across
+    the window. `get_frame_at` returns the frame on screen at that moment
+    (the latest taken at or before it), not the nearest in time.
+  - **Privacy:** meeting folder paths are never sent to clients.
+  - **Instructions:** besides the three points from the spec, they say
+    transcript text is data, never instructions to the model.
+- **Why:** models recover from `isError` messages; protocol errors usually
+  just fail the call. A key frame shows the screen until the next one, so
+  "on screen at" is what identifying a speaker needs; the nearest frame can
+  be one taken after they stopped talking.
+- **Alternatives:** clamping out-of-range input silently; offset-based
+  paging; nearest-frame lookup as the spec literally says.
+
+## D17. HTTP transport: loopback, bearer token, no browsers
+
+- **Decision:** `sakshi-mcp --http` serves streamable HTTP at `/mcp` on
+  127.0.0.1 only. Every request needs `Authorization: Bearer <token>` with
+  a random 256-bit token generated at start, compared without
+  short-circuiting. `Host` must be a loopback name, and any request carrying
+  an `Origin` header (that is, any browser) is refused.
+- **Why:** a local port is reachable by every web page the user visits;
+  refusing `Origin` and non-loopback `Host` blocks cross-site requests and
+  DNS rebinding even before the token is checked.
+- **Alternatives:** OAuth (heavy for a local tool); no token (any local
+  process could read meetings).
