@@ -9,6 +9,18 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+hex.workspace = true
+hf-hub.workspace = true
+reqwest.workspace = true
+sakshi-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

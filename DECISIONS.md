@@ -73,3 +73,19 @@ considered. Newest entries go at the bottom.
   weights keep their own licenses and are shown before download.
 - **Alternatives:** `MIT OR Apache-2.0` dual licensing (the Rust ecosystem
   convention, which adds Apache's explicit patent grant); Apache-2.0 only.
+
+## D8. hf-hub 1.0 for downloads, plus one direct API call
+
+- **Decision:** model downloads use `hf-hub` 1.0 (blocking client, `local_dir`
+  downloads into a staging folder, then size and SHA-256 checks before the file
+  is moved into `models/<owner>/<name>/<revision>/`). Custom models are
+  validated before download: `.gguf` only, size and SHA-256 from the Hub's
+  `paths-info` API, and `general.architecture` (`asr` or `sortformer`) read
+  from the header with HTTP range requests.
+- **Why:** the spec's choice and the official client. The project owner
+  accepted its cost: about 230 crates including `aws-lc-sys` (C, built with
+  `cc`; no cmake needed) and the Xet client. `paths-info` is called with
+  reqwest directly because hf-hub 1.0.0 can't report a file's SHA-256: its
+  LFS type reads `sha256` while the API sends `oid`, and its HEAD-based
+  metadata call fails on Xet-backed files after the CDN redirect.
+- **Alternatives:** a small downloader on `ureq`; hf-hub 0.4.

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "nemotron-3.5-asr",
+      "name": "Nemotron 3.5 ASR Streaming 0.6B (Q8_0)",
+      "role": "asr",
+      "engine": "nemo-speech",
+      "format": "gguf",
+      "repo": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "revision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
+      "filename": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+      "size": 741548352,
+      "sha256": "a5c435f294eea8f88ce68dd27b8c3bfea7f777cb2fbba04fcd30eaa555f429ae",
+      "license": "OpenMDW-1.1 (NVIDIA Open Model License)",
+      "license_url": "https://openmdw.ai/license/1-1/",
+      "default": true
+    },
+    {
+      "id": "nemotron-3-diarization",
+      "name": "Nemotron 3 Diarization (Q8_0)",
+      "role": "diarization",
+      "engine": "nemo-speech",
+      "format": "gguf",
+      "repo": "nvidia/Nemotron-3-Diarization",
+      "revision": "f667ed73aee57d40cc39428eb768b4fd87a0a29e",
+      "filename": "Nemotron-3-Diarization.q8_0.gguf",
+      "size": 107012128,
+      "sha256": "08456d9e22cd9a323c0364d98375f3746d6e68507ebb705cd46438c534c7a3a1",
+      "license": "OpenMDW-1.1 (NVIDIA Open Model License)",
+      "license_url": "https://openmdw.ai/license/1-1/",
+      "default": true
+    }
+  ]
+}
