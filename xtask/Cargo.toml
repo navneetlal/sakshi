@@ -11,6 +11,9 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+hex.workspace = true
+sakshi-asr.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true
