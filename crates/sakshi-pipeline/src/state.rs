@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::PipelineError;
 
 /// Pipeline stages in the order they run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Stage {
     /// Make sure both audio tracks are 16 kHz mono.
     PrepareAudio,

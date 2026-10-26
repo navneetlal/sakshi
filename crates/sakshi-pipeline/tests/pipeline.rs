@@ -9,6 +9,7 @@ use sakshi_core::{Language, MeetingDir, Speaker, Track, Transcript, read_json};
 use sakshi_media::Ffmpeg;
 use sakshi_pipeline::{
     BleedConfig, Pipeline, PipelineConfig, PipelineError, PipelineState, RunOptions, Stage,
+    StageEvent,
 };
 
 /// Returns canned words per track and records every call.
@@ -173,6 +174,47 @@ fn a_second_run_reuses_finished_stages() {
     assert!(report.ran.is_empty());
     assert_eq!(report.skipped, Stage::ALL);
     assert_eq!(fake.calls().len(), 2);
+}
+
+#[test]
+fn reports_progress_to_an_observer() {
+    let dir = tempfile::tempdir().unwrap();
+    let meeting = meeting(dir.path());
+    let fake = FakeTranscriber::new();
+    *fake.fail_mic.lock().unwrap() = true;
+    let events = Mutex::new(Vec::new());
+    let observer = |e: &StageEvent| events.lock().unwrap().push(e.clone());
+
+    let pipeline = Pipeline::new(&fake, None, PipelineConfig::default()).with_observer(&observer);
+    pipeline.run(&meeting, &RunOptions::default()).unwrap_err();
+    pipeline.run(&meeting, &RunOptions::default()).unwrap();
+
+    let events = events.into_inner().unwrap();
+    let kinds: Vec<String> = events
+        .iter()
+        .map(|e| match e {
+            StageEvent::Started { stage } => format!("start {stage}"),
+            StageEvent::Reused { stage } => format!("reuse {stage}"),
+            StageEvent::Finished { stage, .. } => format!("done {stage}"),
+            StageEvent::Failed { stage, .. } => format!("fail {stage}"),
+        })
+        .collect();
+    assert_eq!(
+        kinds[..7],
+        [
+            "start prepare-audio",
+            "done prepare-audio",
+            "start transcribe-system",
+            "done transcribe-system",
+            "start transcribe-mic",
+            "fail transcribe-mic",
+            "reuse prepare-audio",
+        ]
+    );
+    assert_eq!(kinds.last().unwrap(), "done save");
+    let json = serde_json::to_value(&events[1]).unwrap();
+    assert_eq!(json["kind"], "finished");
+    assert_eq!(json["stage"], "prepare-audio");
 }
 
 #[test]

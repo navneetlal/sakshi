@@ -1,11 +1,8 @@
 use std::path::PathBuf;
 
 use clap::Subcommand;
-use sakshi_asr::LanguageTable;
-use sakshi_core::{DataDir, Language, MeetingDir, MeetingInfo, read_json, write_json_atomic};
-use sakshi_models::{ModelStore, Role};
-
-use crate::process::load_settings;
+use sakshi_app::{check_language, load_settings, save_settings, set_meeting_language};
+use sakshi_core::{DataDir, Language, MeetingDir};
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
@@ -46,7 +43,7 @@ pub fn run(data: &DataDir, cmd: ConfigCommand) -> anyhow::Result<()> {
         ConfigCommand::ConsentReminder { state } => {
             let mut settings = load_settings(data)?;
             settings.consent_reminder = matches!(state, OnOff::On);
-            write_json_atomic(&data.config_path(), &settings)?;
+            save_settings(data, &settings)?;
             println!(
                 "consent reminder {}",
                 if settings.consent_reminder {
@@ -58,39 +55,21 @@ pub fn run(data: &DataDir, cmd: ConfigCommand) -> anyhow::Result<()> {
             Ok(())
         }
         ConfigCommand::Language { language, meeting } => {
-            check_supported(data, &language)?;
+            check_language(data, &language)?;
             match meeting {
                 Some(folder) => {
                     let meeting = MeetingDir::new(folder);
-                    let path = meeting.info_json();
-                    let mut info: MeetingInfo = if path.exists() {
-                        read_json(&path)?
-                    } else {
-                        MeetingInfo::default()
-                    };
-                    info.language = Some(language.clone());
-                    write_json_atomic(&path, &info)?;
+                    set_meeting_language(&meeting, Some(language.clone()))?;
                     println!("{}: language set to {language}", meeting.path().display());
                 }
                 None => {
                     let mut settings = load_settings(data)?;
                     settings.language = language.clone();
-                    write_json_atomic(&data.config_path(), &settings)?;
+                    save_settings(data, &settings)?;
                     println!("default language set to {language}");
                 }
             }
             Ok(())
         }
     }
-}
-
-/// Checks a pinned code against the default ASR model when it is
-/// downloaded; otherwise the check happens before transcription.
-fn check_supported(data: &DataDir, language: &Language) -> anyhow::Result<()> {
-    let store = ModelStore::open(data)?;
-    let entry = store.default_for(Role::Asr)?;
-    if let Some(path) = store.installed_path(&entry)? {
-        LanguageTable::from_model(&path)?.resolve(language)?;
-    }
-    Ok(())
 }

@@ -12,7 +12,7 @@ publish.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 ctrlc.workspace = true
-jiff.workspace = true
+sakshi-app.workspace = true
 sakshi-asr.workspace = true
 sakshi-capture.workspace = true
 sakshi-core.workspace = true
@@ -22,7 +22,6 @@ sakshi-pipeline.workspace = true
 sakshi-store.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

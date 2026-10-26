@@ -1,13 +1,9 @@
 use std::path::PathBuf;
 
-use anyhow::{Context, bail};
 use clap::Args;
-use sakshi_asr::{NemoSpeech, locate_sidecar};
-use sakshi_core::{DataDir, Language, MeetingDir, MeetingInfo, Settings, read_json};
-use sakshi_media::Ffmpeg;
-use sakshi_models::{ModelStore, Role};
-use sakshi_pipeline::{BleedConfig, Pipeline, PipelineConfig, RunOptions, Stage};
-use sakshi_store::Store;
+use sakshi_app::{ProcessOptions, Progress, process_meeting};
+use sakshi_core::{DataDir, Language, MeetingDir};
+use sakshi_pipeline::{Stage, StageEvent};
 
 #[derive(Debug, Args)]
 pub struct ProcessArgs {
@@ -49,68 +45,39 @@ pub struct ProcessArgs {
 impl ProcessArgs {
     /// Default settings for one folder.
     pub(crate) fn for_folder(folder: PathBuf) -> Self {
+        let defaults = ProcessOptions::default();
         Self {
             folder,
-            language: None,
-            from: None,
-            force: false,
-            device: "auto".into(),
-            asr_model: None,
-            diar_model: None,
-            bleed_threshold: None,
+            language: defaults.language,
+            from: defaults.from,
+            force: defaults.force,
+            device: defaults.device,
+            asr_model: defaults.asr_model,
+            diar_model: defaults.diar_model,
+            bleed_threshold: defaults.bleed_threshold,
         }
     }
 }
 
 pub fn run(data: &DataDir, args: ProcessArgs) -> anyhow::Result<()> {
-    if !args.folder.is_dir() {
-        bail!("{} is not a folder", args.folder.display());
-    }
-    let meeting = MeetingDir::new(&args.folder);
-    if sakshi_capture::needs_finalize(&meeting) {
+    let options = ProcessOptions {
+        language: args.language,
+        from: args.from,
+        force: args.force,
+        device: args.device,
+        asr_model: args.asr_model,
+        diar_model: args.diar_model,
+        bleed_threshold: args.bleed_threshold,
+    };
+    let outcome = process_meeting(data, &args.folder, &options, &|progress| match progress {
         // A recording that never finished, e.g. after a crash.
-        println!("finishing the interrupted recording first");
-        sakshi_capture::finalize(&meeting, &Ffmpeg::locate()?, false)?;
-    }
-    let language = resolve_language(data, &meeting, args.language)?;
-
-    let store = ModelStore::open(data)?;
-    let model_path = |id: Option<String>, role| -> anyhow::Result<PathBuf> {
-        let entry = match id {
-            Some(id) => store.find(&id)?,
-            None => store.default_for(role)?,
-        };
-        if entry.role != role {
-            bail!("{} is a {} model, not {role}", entry.id, entry.role);
-        }
-        Ok(store.require(&entry)?)
-    };
-    let asr = model_path(args.asr_model, Role::Asr)?;
-    let diar = model_path(args.diar_model, Role::Diarization)?;
-
-    let transcriber = NemoSpeech::new(locate_sidecar()?, asr, Some(diar))?.with_device(args.device);
-    let mut config = PipelineConfig {
-        language,
-        ..PipelineConfig::default()
-    };
-    if let Some(threshold) = args.bleed_threshold {
-        if !(0.0..=1.0).contains(&threshold) {
-            bail!("--bleed-threshold must be between 0 and 1");
-        }
-        config.bleed = BleedConfig {
-            threshold,
-            ..config.bleed
-        };
-    }
-    let ffmpeg = Ffmpeg::locate().ok();
-
-    let report = Pipeline::new(&transcriber, ffmpeg, config).run(
-        &meeting,
-        &RunOptions {
-            from: args.from,
-            force: args.force,
-        },
-    )?;
+        Progress::Finalizing => eprintln!("finishing the interrupted recording first"),
+        Progress::Stage {
+            event: StageEvent::Started { stage },
+        } => eprintln!("{}...", stage.as_str()),
+        _ => {}
+    })?;
+    let report = outcome.report;
 
     let names = |stages: &[Stage]| {
         if stages.is_empty() {
@@ -138,77 +105,10 @@ pub fn run(data: &DataDir, args: ProcessArgs) -> anyhow::Result<()> {
             report.languages.join(", ")
         }
     );
-    println!("transcript: {}", meeting.transcript_json().display());
-
-    // Make the meeting visible to the MCP server.
-    let record = Store::open(&data.db_path())?.index_meeting(&meeting)?;
-    println!("meeting id: {}", record.id);
+    println!(
+        "transcript: {}",
+        MeetingDir::new(&args.folder).transcript_json().display()
+    );
+    println!("meeting id: {}", outcome.meeting.id);
     Ok(())
-}
-
-/// `--language`, else the meeting's `meeting.json`, else the global setting.
-fn resolve_language(
-    data: &DataDir,
-    meeting: &MeetingDir,
-    flag: Option<Language>,
-) -> anyhow::Result<Language> {
-    if let Some(language) = flag {
-        return Ok(language);
-    }
-    if meeting.info_json().exists() {
-        let info: MeetingInfo = read_json(&meeting.info_json())?;
-        if let Some(language) = info.language {
-            return Ok(language);
-        }
-    }
-    load_settings(data).map(|s| s.language)
-}
-
-pub fn load_settings(data: &DataDir) -> anyhow::Result<Settings> {
-    let path = data.config_path();
-    if !path.exists() {
-        return Ok(Settings::default());
-    }
-    read_json(&path).with_context(|| format!("reading {}", path.display()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use sakshi_core::write_json_atomic;
-
-    #[test]
-    fn language_precedence_is_flag_meeting_global() {
-        let root = tempfile::tempdir().unwrap();
-        let data = DataDir::new(root.path().join("data"));
-        let meeting = MeetingDir::new(root.path().join("m"));
-        let code = |c: &str| Language::Code(c.into());
-
-        assert_eq!(
-            resolve_language(&data, &meeting, None).unwrap(),
-            Language::Auto
-        );
-
-        write_json_atomic(
-            &data.config_path(),
-            &Settings {
-                language: code("en"),
-                ..Settings::default()
-            },
-        )
-        .unwrap();
-        assert_eq!(resolve_language(&data, &meeting, None).unwrap(), code("en"));
-
-        let info = MeetingInfo {
-            language: Some(code("hi")),
-            ..MeetingInfo::default()
-        };
-        write_json_atomic(&meeting.info_json(), &info).unwrap();
-        assert_eq!(resolve_language(&data, &meeting, None).unwrap(), code("hi"));
-
-        assert_eq!(
-            resolve_language(&data, &meeting, Some(Language::Auto)).unwrap(),
-            Language::Auto
-        );
-    }
 }

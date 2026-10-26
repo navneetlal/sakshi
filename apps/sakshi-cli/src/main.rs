@@ -1,4 +1,5 @@
 mod config;
+mod mcp;
 mod meetings;
 mod models;
 mod process;
@@ -39,6 +40,9 @@ enum Command {
     /// Show or change settings.
     #[command(subcommand)]
     Config(config::ConfigCommand),
+    /// Connect MCP clients such as Claude Desktop to Sakshi.
+    #[command(subcommand)]
+    Mcp(mcp::McpCommand),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -57,5 +61,6 @@ fn main() -> anyhow::Result<()> {
         Command::Meetings(cmd) => meetings::run(&data, cmd),
         Command::Models(cmd) => models::run(&data, cmd),
         Command::Config(cmd) => config::run(&data, cmd),
+        Command::Mcp(cmd) => mcp::run(&data, cmd),
     }
 }

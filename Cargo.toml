@@ -11,6 +11,7 @@ repository = "https://github.com/navneetlal/sakshi"
 publish = false
 
 [workspace.dependencies]
+sakshi-app = { path = "crates/sakshi-app" }
 sakshi-asr = { path = "crates/sakshi-asr" }
 sakshi-capture = { path = "crates/sakshi-capture" }
 sakshi-core = { path = "crates/sakshi-core" }

@@ -50,6 +50,30 @@ pub struct Report {
     pub languages: Vec<String>,
 }
 
+/// Progress of a run, one event per stage transition.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StageEvent {
+    Started {
+        stage: Stage,
+    },
+    /// Finished in an earlier run with the same settings.
+    Reused {
+        stage: Stage,
+    },
+    Finished {
+        stage: Stage,
+        note: Option<String>,
+    },
+    Failed {
+        stage: Stage,
+        error: String,
+    },
+}
+
+/// Receives [`StageEvent`]s as a run progresses.
+pub type Observer<'a> = dyn Fn(&StageEvent) + Send + Sync + 'a;
+
 /// Turns a meeting folder's recordings into `transcript.json` and key
 /// frames. Every stage records its completion in `pipeline.json`, so an
 /// interrupted run resumes after the last finished stage.
@@ -57,6 +81,7 @@ pub struct Pipeline<'a> {
     transcriber: &'a dyn Transcriber,
     ffmpeg: Option<Ffmpeg>,
     config: PipelineConfig,
+    observer: Option<&'a Observer<'a>>,
 }
 
 impl<'a> Pipeline<'a> {
@@ -71,6 +96,19 @@ impl<'a> Pipeline<'a> {
             transcriber,
             ffmpeg,
             config,
+            observer: None,
+        }
+    }
+
+    /// Reports each stage as it starts, finishes, fails, or is reused.
+    pub fn with_observer(mut self, observer: &'a Observer<'a>) -> Self {
+        self.observer = Some(observer);
+        self
+    }
+
+    fn emit(&self, event: StageEvent) {
+        if let Some(observer) = self.observer {
+            observer(&event);
         }
     }
 
@@ -92,14 +130,29 @@ impl<'a> Pipeline<'a> {
             let fresh = state.get(stage).is_some_and(|r| r.key == key);
             if fresh && !forced && !input_ran {
                 tracing::info!(%stage, "already done");
+                self.emit(StageEvent::Reused { stage });
                 skipped.push(stage);
                 continue;
             }
             tracing::info!(%stage, "running");
-            let note = self.run_stage(stage, meeting)?;
+            self.emit(StageEvent::Started { stage });
+            let note = match self.run_stage(stage, meeting) {
+                Ok(note) => note,
+                Err(e) => {
+                    self.emit(StageEvent::Failed {
+                        stage,
+                        error: e.to_string(),
+                    });
+                    return Err(e);
+                }
+            };
             if let Some(note) = &note {
                 tracing::info!(%stage, "{note}");
             }
+            self.emit(StageEvent::Finished {
+                stage,
+                note: note.clone(),
+            });
             state.record(stage, key, note);
             state.save(&state_path)?;
             ran.push(stage);

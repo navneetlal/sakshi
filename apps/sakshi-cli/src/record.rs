@@ -5,11 +5,12 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use clap::Args;
+use sakshi_app::{create_meeting, load_settings, save_settings};
 use sakshi_capture::{Capture, CaptureConfig, PermissionState, Source, SourceId};
-use sakshi_core::{DataDir, MeetingDir, MeetingInfo, Settings, write_json_atomic};
+use sakshi_core::{DataDir, Settings};
 use sakshi_media::Ffmpeg;
 
-use crate::process::{self, ProcessArgs, load_settings};
+use crate::process::{self, ProcessArgs};
 
 #[derive(Debug, Args)]
 pub struct RecordArgs {
@@ -297,7 +298,7 @@ fn remind_about_consent(data: &DataDir, settings: &mut Settings) -> anyhow::Resu
         "" | "y" | "yes" => Ok(true),
         "a" | "always" => {
             settings.consent_reminder = false;
-            write_json_atomic(&data.config_path(), &*settings)?;
+            save_settings(data, settings)?;
             println!(
                 "Won't remind you again (turn it back on with `sakshi-cli config consent-reminder on`)."
             );
@@ -305,36 +306,6 @@ fn remind_about_consent(data: &DataDir, settings: &mut Settings) -> anyhow::Resu
         }
         _ => Ok(false),
     }
-}
-
-/// A new meeting folder under the data directory, with its meeting.json.
-fn create_meeting(
-    data: &DataDir,
-    source: &Source,
-    title: Option<String>,
-) -> anyhow::Result<(MeetingDir, MeetingInfo)> {
-    let id = uuid::Uuid::now_v7().to_string();
-    let meeting = data.meeting(&id);
-    std::fs::create_dir_all(meeting.path())
-        .with_context(|| format!("creating {}", meeting.path().display()))?;
-    let title = title.or_else(|| {
-        Some(match (&source.meeting, source.title.trim()) {
-            (Some(app), "") => app.clone(),
-            (_, "") => source
-                .app_name
-                .clone()
-                .unwrap_or_else(|| "Recording".into()),
-            (_, t) => t.to_owned(),
-        })
-    });
-    let info = MeetingInfo {
-        id: Some(id),
-        title,
-        started_at: Some(jiff::Timestamp::now().to_string()),
-        language: None,
-    };
-    write_json_atomic(&meeting.info_json(), &info)?;
-    Ok((meeting, info))
 }
 
 #[cfg(test)]

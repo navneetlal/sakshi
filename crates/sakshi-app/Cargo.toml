@@ -1,0 +1,32 @@
+[package]
+name = "sakshi-app"
+description = "Sakshi application services shared by the CLI and the desktop app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+dirs.workspace = true
+jiff.workspace = true
+sakshi-asr.workspace = true
+sakshi-capture.workspace = true
+sakshi-core.workspace = true
+sakshi-media.workspace = true
+sakshi-models.workspace = true
+sakshi-pipeline.workspace = true
+sakshi-store.workspace = true
+serde.workspace = true
+# Keeps the key order of the client config files Sakshi edits.
+serde_json = { workspace = true, features = ["preserve_order"] }
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

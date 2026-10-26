@@ -12,6 +12,6 @@ mod text;
 
 pub use bleed::{BleedConfig, BleedMatch, remove_bleed};
 pub use error::PipelineError;
-pub use pipeline::{Pipeline, PipelineConfig, Report, RunOptions};
+pub use pipeline::{Observer, Pipeline, PipelineConfig, Report, RunOptions, StageEvent};
 pub use segments::build_segments;
 pub use state::{PipelineState, Stage, StageRecord};
