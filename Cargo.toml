@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/sakshi-cli", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/navneetlal/sakshi"
+publish = false
+
+[workspace.dependencies]
+sakshi-asr = { path = "crates/sakshi-asr" }
+sakshi-core = { path = "crates/sakshi-core" }
+sakshi-media = { path = "crates/sakshi-media" }
+sakshi-models = { path = "crates/sakshi-models" }
+sakshi-pipeline = { path = "crates/sakshi-pipeline" }
+
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+thiserror = "2.0.21"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
