@@ -168,6 +168,16 @@ considered. Newest entries go at the bottom.
   language (`en-US` for the 60 min AMI run), while the short fixtures list
   none (`"languages": []`). The offline path reports it reliably but is less
   accurate (D9). Treat the list as best-effort.
+- **Open issue (found in M3 live testing):** under `auto`, when the model
+  ends a sentence with punctuation and a language tag ("…था।" then
+  `<hi-IN>`), it can drop the start of the next utterance. On a recaptured
+  copy of the Hindi fixture, 5 s of speech ("इतालवी भाषा में उच्चारण करना
+  तुलनात्मक रूप से आसान है") was lost. The same audio with `--language hi-IN`
+  was transcribed in full; the original fixture happened not to trigger it.
+  Pinning the language avoids it. A possible fix is "detect, then pin": read
+  the language from a short offline pass, then transcribe the whole track
+  with it pinned. That would also make `languages` reliable, but could hurt
+  meetings that switch languages. Not yet decided.
 - **Alternatives:** a second, offline pass over a short excerpt just to read
   the detected language (about 3 s extra per track); guessing from the script
   of the text (Devanagari alone doesn't distinguish Hindi from Marathi or
@@ -386,3 +396,26 @@ considered. Newest entries go at the bottom.
   scripted use possible without silently skipping it.
 - **Alternatives:** a reminder that can't be turned off; asking for
   permissions only when a capture fails.
+
+## D22. Live capture results (macOS 27, Apple Silicon, 2026-10-26)
+
+- **Decision:** M3 ships after these live checks, run with the user's
+  consent:
+
+  | Check | Result |
+  |---|---|
+  | Window capture, 5 s, 15 fps | 77 frames in 5.02 s; H.264 1280x698; the frame shows the window |
+  | App audio (display capture while `afplay` plays the Hindi fixture) | Captured audio matches the source within 0.5 dB per second, with no gaps; transcribed in Hindi with two speakers |
+  | Mic and system alignment (speakers playing into the mic) | Mic lags system by 60 ms (envelope correlation 0.92), the physical speaker-to-mic delay; 2 echo segments removed by bleed removal |
+  | Crash (SIGKILL after 6 s) | Video (6.2 s) and WAV (6.0 s) readable; `process` finalized and processed it |
+
+- **Why:** the backend calls Apple frameworks that unit tests can't
+  exercise, and CI runners have no Screen Recording access.
+- **Found and fixed:**
+  - A command-line process must open its window-server connection
+    (`CGMainDisplayID()`) before ScreenCaptureKit, or it aborts with
+    `CGS_REQUIRE_INIT`.
+  - Bleed trimming could leave mic segments out of time order; they are now
+    re-sorted.
+- **Not explained:** one scripted run exited with code 1 before creating its
+  meeting folder, with stderr discarded. Five identical reruns succeeded.

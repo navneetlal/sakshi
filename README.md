@@ -23,7 +23,7 @@ through Sakshi's `save_summary` tool.
 | M0 | Workspace, CI, docs | done |
 | M1 | `sakshi-cli process <folder>` on existing recordings | done |
 | M2 | SQLite store and MCP server | done |
-| M3 | macOS capture (`sakshi-cli record`) | in progress |
+| M3 | macOS capture (`sakshi-cli record`) | done |
 | M4 | Desktop app (Tauri 2) | planned |
 | M5 / M6 | Windows / Linux capture | planned |
 
@@ -210,6 +210,11 @@ Hindi clip from FLEURS, both CC BY 4.0. See
 - Diarization separates at most 8 remote speakers.
 - When the language is auto-detected, the runtime reports it only for some
   utterances, so `transcript.json` may list no language.
+- Auto-detection can drop the start of an utterance that follows a sentence
+  end (seen with Hindi). If you know the meeting's language, pin it with
+  `--language` or `sakshi-cli config language` (DECISIONS.md D10).
+- On macOS, a window capture records that app's audio. Recording a display
+  records all system audio except Sakshi's own.
 - Word confidence is always 1.0 with this model.
 - Short mic segments ("yeah", "okay") are never treated as bleed, so a
   one-word echo of the remote side can remain.

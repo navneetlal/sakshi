@@ -29,9 +29,21 @@ fn describe(error: *mut NSError) -> String {
     }
 }
 
+/// Opens this process's connection to the window server. AppKit apps get
+/// one at launch; a command-line tool doesn't, and parts of
+/// ScreenCaptureKit (such as a filter's pixel scale) then abort with
+/// `CGS_REQUIRE_INIT`. Asking CoreGraphics for the main display opens it.
+pub(super) fn ensure_window_server() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = objc2_core_graphics::CGMainDisplayID();
+    });
+}
+
 /// On-screen windows and displays. Fails with a permission error when
 /// Screen Recording access is missing.
 pub(super) fn shareable_content() -> Result<Content, CaptureError> {
+    ensure_window_server();
     let (tx, rx) = mpsc::sync_channel::<Result<Content, String>>(1);
     let block = RcBlock::new(
         move |content: *mut SCShareableContent, error: *mut NSError| {
@@ -113,7 +125,7 @@ fn list(content: &Content) -> Vec<Source> {
         let (w, h) = unsafe { (display.width(), display.height()) };
         out.push(Source {
             id: SourceId::Display(id),
-            title: format!("Display {id} ({w}x{h})"),
+            title: format!("Display {id}"),
             app_name: None,
             bundle_id: None,
             width: u32::try_from(w).unwrap_or(0),

@@ -50,7 +50,8 @@ pub struct BleedMatch {
 
 /// Splits `segments` into what to keep and the mic speech that is bleed.
 /// System segments are always kept; mic segments are kept, dropped, or
-/// trimmed into the parts that are the user's own speech.
+/// trimmed into the parts that are the user's own speech. Both lists come
+/// back in time order (trimming can move a segment's start later).
 pub fn remove_bleed(
     segments: Vec<Segment>,
     config: &BleedConfig,
@@ -95,6 +96,9 @@ pub fn remove_bleed(
             }
         }
     }
+    let order = |s: &Segment| (s.start_ms, s.end_ms, s.track == Track::System);
+    kept.sort_by_key(order);
+    removed.sort_by_key(|m| order(&m.segment));
     (kept, removed)
 }
 
@@ -376,6 +380,28 @@ mod tests {
         let mine = kept.iter().find(|s| s.track == Track::Mic).unwrap();
         assert_eq!(mine.start_ms, mine.words[0].start_ms);
         assert_eq!(mine.words.len(), 7);
+    }
+
+    #[test]
+    fn trimmed_segments_stay_in_time_order() {
+        // Found in a live recording: the mic echo starts before the next
+        // system segment, but what's left after trimming starts after it.
+        let segments = vec![
+            seg(
+                Track::Mic,
+                14_500,
+                "but so I don't know really all it is about",
+            ),
+            seg(Track::System, 14_600, "but so I don't know really"),
+            seg(Track::System, 15_000, "what we're gonna do"),
+        ];
+
+        let (kept, removed) = remove_bleed(segments, &BleedConfig::default());
+
+        let starts: Vec<u64> = kept.iter().map(|s| s.start_ms).collect();
+        assert!(starts.windows(2).all(|p| p[0] <= p[1]), "{starts:?}");
+        assert_eq!(kept.last().unwrap().text, "all it is about");
+        assert_eq!(removed.len(), 1);
     }
 
     #[test]
