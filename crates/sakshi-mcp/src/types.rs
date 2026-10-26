@@ -1,4 +1,9 @@
 //! Tool parameters and structured results.
+//!
+//! Optional fields are declared with a single JSON type and left out when
+//! absent (`#[schemars(with = ...)]` plus `serde(default)` or
+//! `skip_serializing_if`), instead of the `["type", "null"]` arrays that
+//! clients mapping schemas onto single-type dialects reject.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -7,12 +12,20 @@ use serde::{Deserialize, Serialize};
 pub struct ListMeetingsParams {
     /// Only meetings that started at or after this time: RFC 3339 (e.g.
     /// "2026-10-26T09:00:00Z") or a UTC date ("2026-10-26").
+    #[serde(default)]
+    #[schemars(with = "String")]
     pub since: Option<String>,
     /// Only meetings that started before this time; same formats as `since`.
+    #[serde(default)]
+    #[schemars(with = "String")]
     pub until: Option<String>,
     /// Text that must appear in the meeting title or transcript.
+    #[serde(default)]
+    #[schemars(with = "String")]
     pub query: Option<String>,
     /// Maximum number of meetings (1-100, default 20).
+    #[serde(default)]
+    #[schemars(with = "u32")]
     pub limit: Option<u32>,
 }
 
@@ -28,7 +41,7 @@ pub enum TranscriptFormat {
     /// Structured segments.
     #[default]
     Json,
-    /// One line per segment: "[mm:ss] Speaker: text".
+    /// One line per segment: "[m:ss] Speaker: text".
     Text,
 }
 
@@ -37,14 +50,24 @@ pub struct GetTranscriptParams {
     /// A meeting id from `list_meetings`.
     pub meeting_id: String,
     /// Only segments overlapping this window, in milliseconds from the start.
+    #[serde(default)]
+    #[schemars(with = "u64")]
     pub start_ms: Option<u64>,
     /// End of the window (exclusive), in milliseconds from the start.
+    #[serde(default)]
+    #[schemars(with = "u64")]
     pub end_ms: Option<u64>,
     /// "json" (default) or "text".
+    #[serde(default)]
+    #[schemars(with = "TranscriptFormat")]
     pub format: Option<TranscriptFormat>,
     /// Include per-word timing in JSON output (larger responses).
+    #[serde(default)]
+    #[schemars(with = "bool")]
     pub include_words: Option<bool>,
     /// The `next_cursor` from the previous page, to continue reading.
+    #[serde(default)]
+    #[schemars(with = "String")]
     pub cursor: Option<String>,
 }
 
@@ -53,11 +76,17 @@ pub struct GetFramesParams {
     /// A meeting id from `list_meetings`.
     pub meeting_id: String,
     /// Start of the window, in milliseconds from the start of the recording.
+    #[serde(default)]
+    #[schemars(with = "u64")]
     pub start_ms: Option<u64>,
     /// End of the window (exclusive), in milliseconds.
+    #[serde(default)]
+    #[schemars(with = "u64")]
     pub end_ms: Option<u64>,
     /// Maximum frames to return (1-16, default 8). When the window holds
     /// more, frames are picked evenly across it.
+    #[serde(default)]
+    #[schemars(with = "u32")]
     pub max: Option<u32>,
 }
 
@@ -74,6 +103,8 @@ pub struct SearchParams {
     /// Text to find in transcripts (case-insensitive substring).
     pub query: String,
     /// Maximum results (1-100, default 20).
+    #[serde(default)]
+    #[schemars(with = "u32")]
     pub limit: Option<u32>,
 }
 
@@ -84,8 +115,12 @@ pub struct SaveSummaryParams {
     /// The summary, in Markdown (up to 256 KiB).
     pub markdown: String,
     /// A one-line title.
+    #[serde(default)]
+    #[schemars(with = "String")]
     pub title: Option<String>,
     /// The model that wrote the summary, e.g. "claude-opus-5-5".
+    #[serde(default)]
+    #[schemars(with = "String")]
     pub author_model: Option<String>,
 }
 
@@ -94,7 +129,9 @@ pub struct SaveSummaryParams {
 pub struct MeetingOut {
     pub id: String,
     pub title: String,
-    /// RFC 3339 start time, when known.
+    /// RFC 3339 start time; absent when unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
     pub started_at: Option<String>,
     /// RFC 3339 time Sakshi last processed the meeting.
     pub processed_at: String,
@@ -115,7 +152,11 @@ pub struct MeetingList {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct SummaryInfo {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
     pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
     pub author_model: Option<String>,
     pub created_at: String,
 }
@@ -145,9 +186,13 @@ pub struct SegmentOut {
     pub speaker: String,
     pub text: String,
     /// The key frame on screen when the segment started (pass it to
-    /// `get_frame_at` as `at_ms`), if the meeting has video.
+    /// `get_frame_at` as `at_ms`); absent when the meeting has no video.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "u64")]
     pub frame_id: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Per-word timing, when `include_words` was set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Vec<WordOut>")]
     pub words: Option<Vec<WordOut>>,
 }
 
@@ -155,9 +200,11 @@ pub struct SegmentOut {
 pub struct TranscriptPage {
     pub meeting_id: String,
     pub segments: Vec<SegmentOut>,
-    /// Ids of the key frames taken during the returned segments.
+    /// Key frames on screen during the returned segments.
     pub frame_ids: Vec<u64>,
     /// Pass as `cursor` to read the next page; absent on the last page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
     pub next_cursor: Option<String>,
 }
 
@@ -165,6 +212,8 @@ pub struct TranscriptPage {
 pub struct SearchHitOut {
     pub meeting_id: String,
     pub meeting_title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
     pub started_at: Option<String>,
     pub segment_id: u32,
     pub start_ms: u64,
@@ -187,10 +236,16 @@ pub struct SavedSummary {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct SummaryOut {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
     pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
     pub author_model: Option<String>,
     pub created_at: String,
     /// Absent when the response size limit was reached; see `truncated`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
     pub markdown: Option<String>,
 }
 

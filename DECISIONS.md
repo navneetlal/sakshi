@@ -311,3 +311,16 @@ considered. Newest entries go at the bottom.
   DNS rebinding even before the token is checked.
 - **Alternatives:** OAuth (heavy for a local tool); no token (any local
   process could read meetings).
+
+## D18. Tool schemas use one JSON type per field
+
+- **Decision:** optional tool parameters and result fields are declared
+  with a single type and left out when absent, rather than schemars' default
+  `"type": ["integer", "null"]` for `Option<T>`. The server still accepts an
+  explicit `null` as absent.
+- **Why:** MCP Inspector's `--strict` check flagged 22 such fields across
+  7 tools. Clients that map tool schemas onto a single-type dialect (such as
+  the OpenAPI subset used for Gemini function declarations) may reject
+  them. After the change it reports none.
+- **Alternatives:** `anyOf` branches (still awkward for OpenAPI 3.0-style
+  dialects); leaving them (fine for Claude, riskier for other clients).
