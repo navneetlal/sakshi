@@ -14,7 +14,8 @@ const BINARY: &str = if cfg!(windows) {
 /// Finds the pinned `nemo-speech` binary:
 ///
 /// 1. `$SAKSHI_NEMO_SPEECH`;
-/// 2. `nemo-speech/bin/` next to the running executable (bundled layout);
+/// 2. `nemo-speech/bin/` next to the running executable, or in
+///    `../Resources/` from it (inside the macOS app bundle);
 /// 3. `sidecars/nemo-speech-<version>-*/bin/` in the executable's directory
 ///    or up to three levels above it, which is where `cargo xtask
 ///    fetch-sidecar` puts it in a development checkout.
@@ -33,9 +34,13 @@ pub fn locate_sidecar() -> Result<PathBuf, AsrError> {
 }
 
 fn find_near(exe_dir: &Path) -> Option<PathBuf> {
-    let bundled = exe_dir.join("nemo-speech").join("bin").join(BINARY);
-    if bundled.is_file() {
-        return Some(bundled);
+    let resources = exe_dir.parent().map(|contents| contents.join("Resources"));
+    let bundled = std::iter::once(exe_dir.to_path_buf())
+        .chain(resources)
+        .map(|dir| dir.join("nemo-speech").join("bin").join(BINARY))
+        .find(|p| p.is_file());
+    if bundled.is_some() {
+        return bundled;
     }
     let prefix = format!("nemo-speech-{NEMO_SPEECH_VERSION}-");
     for dir in exe_dir.ancestors().take(4) {
@@ -74,6 +79,19 @@ mod tests {
                 "nemo-speech-{NEMO_SPEECH_VERSION}-macos-aarch64-metal"
             ))
             .join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join(BINARY), b"").unwrap();
+
+        assert_eq!(find_near(&exe_dir), Some(bin.join(BINARY)));
+    }
+
+    #[test]
+    fn finds_the_copy_inside_a_macos_app() {
+        let root = tempfile::tempdir().unwrap();
+        let contents = root.path().join("Sakshi.app/Contents");
+        let exe_dir = contents.join("MacOS");
+        let bin = contents.join("Resources/nemo-speech/bin");
+        std::fs::create_dir_all(&exe_dir).unwrap();
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::write(bin.join(BINARY), b"").unwrap();
 

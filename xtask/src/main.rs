@@ -1,6 +1,7 @@
 //! Developer tasks, run with `cargo xtask <command>`. Nothing here ships in
 //! the app; it only prepares a development checkout.
 
+mod bundle;
 mod fixtures;
 mod icon;
 mod sidecar;
@@ -39,6 +40,10 @@ enum Command {
         #[arg(long, default_value = "apps/sakshi-desktop/src-tauri/icons/source.png")]
         out: PathBuf,
     },
+    /// Stage the nemo-speech sidecar and a release `sakshi-mcp` in
+    /// `apps/sakshi-desktop/src-tauri/bundle/` for the app bundle (macOS).
+    /// Run by `pnpm run bundle`; needs `fetch-sidecar` first.
+    PrepareBundle,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -46,5 +51,6 @@ fn main() -> anyhow::Result<()> {
         Command::FetchSidecar { variant, force } => sidecar::fetch(variant.as_deref(), force),
         Command::Fixtures => fixtures::generate(),
         Command::Icon { out } => icon::generate(&out),
+        Command::PrepareBundle => bundle::prepare(),
     }
 }
