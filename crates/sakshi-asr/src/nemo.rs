@@ -98,6 +98,23 @@ impl NemoSpeech {
 }
 
 impl Transcriber for NemoSpeech {
+    fn engine_id(&self) -> String {
+        let name = |p: &std::path::Path| {
+            p.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        };
+        let mut id = format!(
+            "nemo-speech {NEMO_SPEECH_VERSION} asr={} right_context={RIGHT_CONTEXT}",
+            name(&self.asr_model)
+        );
+        if let Some(diar) = &self.diar_model {
+            id.push_str(&format!(" diar={} preset={DIAR_PRESET}", name(diar)));
+        }
+        id
+    }
+
     fn transcribe(&self, req: &TranscribeRequest<'_>) -> Result<RawTranscript, AsrError> {
         let language = self.languages.resolve(req.language)?;
         let args = self.args(req, &language)?;

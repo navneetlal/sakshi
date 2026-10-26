@@ -2123,6 +2123,17 @@ dependencies = [
 [[package]]
 name = "sakshi-pipeline"
 version = "0.1.0"
+dependencies = [
+ "hound",
+ "sakshi-asr",
+ "sakshi-core",
+ "sakshi-media",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tracing",
+]
 
 [[package]]
 name = "same-file"

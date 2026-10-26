@@ -8,6 +8,10 @@ use crate::AsrError;
 /// Turns one audio track into timed words.
 pub trait Transcriber: Send + Sync {
     fn transcribe(&self, request: &TranscribeRequest<'_>) -> Result<RawTranscript, AsrError>;
+
+    /// Names the engine, its version, and its models, so results can be
+    /// traced back and redone when any of them change.
+    fn engine_id(&self) -> String;
 }
 
 #[derive(Debug, Clone, Copy)]
