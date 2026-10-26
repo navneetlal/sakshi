@@ -1960,6 +1960,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "sakshi-core",
+ "sakshi-models",
  "tracing",
  "tracing-subscriber",
 ]
