@@ -75,12 +75,14 @@ pub fn platform() -> Box<dyn Capture> {
     }
 }
 
-/// Puts likely meetings first, then other windows by app, then displays.
+/// Puts likely meetings first, then on-screen windows by app, then windows
+/// that aren't on screen, then displays.
 pub fn sort_sources(sources: &mut [Source]) {
     sources.sort_by_key(|s| {
         (
             s.meeting.is_none(),
             matches!(s.id, SourceId::Display(_)),
+            !s.on_screen,
             s.app_name.clone().unwrap_or_default().to_lowercase(),
             s.title.to_lowercase(),
         )
@@ -138,14 +140,25 @@ mod tests {
             width: 100,
             height: 100,
             meeting: meeting.map(str::to_owned),
+            on_screen: true,
         }
     }
 
     #[test]
     fn meetings_come_first_and_displays_last() {
+        let hidden = Source {
+            on_screen: false,
+            ..source(SourceId::Window(5), "Calendar", "Week", None)
+        };
+        let hidden_meeting = Source {
+            on_screen: false,
+            ..source(SourceId::Window(6), "zoom.us", "Zoom Meeting", Some("Zoom"))
+        };
         let mut sources = vec![
             source(SourceId::Display(1), "", "Display 1", None),
+            hidden,
             source(SourceId::Window(2), "TextEdit", "notes", None),
+            hidden_meeting,
             source(SourceId::Window(3), "zoom.us", "Zoom Meeting", Some("Zoom")),
             source(SourceId::Window(4), "Finder", "Downloads", None),
         ];
@@ -155,8 +168,10 @@ mod tests {
             ids,
             [
                 SourceId::Window(3),
+                SourceId::Window(6),
                 SourceId::Window(4),
                 SourceId::Window(2),
+                SourceId::Window(5),
                 SourceId::Display(1)
             ]
         );

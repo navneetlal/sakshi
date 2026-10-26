@@ -211,7 +211,11 @@ fn print_sources(sources: &[Source]) {
             None if app.is_empty() => s.title.clone(),
             None => format!("{app}: {}", s.title),
         };
-        println!("{marker} {kind} {id:<8} {what}  ({}x{})", s.width, s.height);
+        let hidden = if s.on_screen { "" } else { "  [not on screen]" };
+        println!(
+            "{marker} {kind} {id:<8} {what}  ({}x{}){hidden}",
+            s.width, s.height
+        );
     }
     if sources.iter().any(|s| s.meeting.is_some()) {
         println!("\n* looks like a meeting");

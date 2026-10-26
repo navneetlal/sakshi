@@ -150,6 +150,7 @@ mod tests {
             width: 1280,
             height: 720,
             meeting: Some("Zoom".into()),
+            on_screen: true,
         }
     }
 

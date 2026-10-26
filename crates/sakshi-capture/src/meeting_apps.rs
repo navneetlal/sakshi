@@ -12,13 +12,16 @@ const BROWSERS: &[&str] = &[
     "com.operasoftware.Opera",
 ];
 
-/// The meeting app a window belongs to, if it looks like one: the Zoom and
-/// Teams desktop apps, or a browser tab whose title suggests Google Meet,
-/// Teams, or Zoom on the web.
+/// The meeting app a window belongs to, if it looks like one: a Zoom call
+/// window, the Teams or Webex desktop apps, or a browser tab whose title
+/// suggests Google Meet, Teams, or Zoom on the web.
 pub fn meeting_label(bundle_id: Option<&str>, title: &str) -> Option<&'static str> {
     let title = title.to_lowercase();
     match bundle_id? {
-        "us.zoom.xos" => Some("Zoom"),
+        // Zoom's other windows ("Zoom Workplace", settings, chat) stay
+        // around between calls; call windows say what they are.
+        "us.zoom.xos" if title.contains("meeting") || title.contains("webinar") => Some("Zoom"),
+        "us.zoom.xos" => None,
         "com.microsoft.teams2" | "com.microsoft.teams" => Some("Microsoft Teams"),
         "com.cisco.webexmeetingsapp" | "Cisco-Systems.Spark" => Some("Webex"),
         b if BROWSERS.contains(&b) => {
@@ -50,6 +53,13 @@ mod tests {
             meeting_label(Some("us.zoom.xos"), "Zoom Meeting"),
             Some("Zoom")
         );
+        assert_eq!(
+            meeting_label(Some("us.zoom.xos"), "Zoom Webinar"),
+            Some("Zoom")
+        );
+        for other in ["Zoom Workplace", "Zoom", "Zoom Client Healthcheck"] {
+            assert_eq!(meeting_label(Some("us.zoom.xos"), other), None, "{other}");
+        }
         assert_eq!(
             meeting_label(
                 Some("com.microsoft.teams2"),

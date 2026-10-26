@@ -32,6 +32,9 @@ pub struct Source {
     /// The meeting app this looks like ("Zoom", "Microsoft Teams",
     /// "Google Meet"), if any.
     pub meeting: Option<String>,
+    /// False for windows that are minimized, hidden, or on another desktop
+    /// (including full-screen apps' own desktops).
+    pub on_screen: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

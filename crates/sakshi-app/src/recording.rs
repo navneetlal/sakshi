@@ -54,6 +54,7 @@ mod tests {
             width: 100,
             height: 100,
             meeting: meeting.map(str::to_owned),
+            on_screen: true,
         }
     }
 

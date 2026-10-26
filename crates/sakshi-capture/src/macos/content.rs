@@ -14,6 +14,24 @@ use crate::{CaptureError, Source, SourceId, meeting_label};
 /// Windows smaller than this (in points) are toolbars, popovers, and the like.
 const MIN_WINDOW_SIDE: f64 = 120.0;
 
+/// Off screen, small windows are mostly panels and popups kept for reuse;
+/// a call window is bigger than this.
+const MIN_HIDDEN_SIZE: (f64, f64) = (400.0, 300.0);
+
+/// System processes whose off-screen windows are never what anyone wants
+/// to record.
+const SYSTEM_APPS: [&str; 9] = [
+    "com.apple.dock",
+    "com.apple.controlcenter",
+    "com.apple.notificationcenterui",
+    "com.apple.WindowManager",
+    "com.apple.wallpaper.agent",
+    "com.apple.Spotlight",
+    "com.apple.loginwindow",
+    "com.apple.systemuiserver",
+    "com.apple.TextInputMenuAgent",
+];
+
 /// Shareable content, made sendable for the trip back from the completion
 /// handler's queue.
 pub(super) struct Content(Retained<SCShareableContent>);
@@ -40,8 +58,8 @@ pub(super) fn ensure_window_server() {
     });
 }
 
-/// On-screen windows and displays. Fails with a permission error when
-/// Screen Recording access is missing.
+/// Windows (on screen or not) and displays. Fails with a permission error
+/// when Screen Recording access is missing.
 pub(super) fn shareable_content() -> Result<Content, CaptureError> {
     ensure_window_server();
     let (tx, rx) = mpsc::sync_channel::<Result<Content, String>>(1);
@@ -55,8 +73,10 @@ pub(super) fn shareable_content() -> Result<Content, CaptureError> {
         },
     );
     unsafe {
+        // Not only on-screen windows: a call in full screen, on another
+        // desktop, or minimized must still be listed.
         SCShareableContent::getShareableContentExcludingDesktopWindows_onScreenWindowsOnly_completionHandler(
-            true, true, &block,
+            true, false, &block,
         );
     }
     match rx.recv_timeout(Duration::from_secs(15)) {
@@ -110,6 +130,18 @@ fn list(content: &Content) -> Vec<Source> {
         if title.is_empty() && app_name.as_deref().is_none_or(str::is_empty) {
             continue;
         }
+        // Stage Manager keeps windows off screen but active.
+        let on_screen = unsafe { window.isOnScreen() || window.isActive() };
+        // Off screen, apps keep many helper windows: untitled ones, small
+        // panels, and those of XPC services such as the Save panel. Skip
+        // them and the system's own.
+        let helper = bundle_id
+            .as_deref()
+            .is_none_or(|b| SYSTEM_APPS.contains(&b) || b.contains(".xpc."));
+        let small = w < MIN_HIDDEN_SIZE.0 || h < MIN_HIDDEN_SIZE.1;
+        if !on_screen && (title.is_empty() || helper || small) {
+            continue;
+        }
         out.push(Source {
             id: SourceId::Window(unsafe { window.windowID() }),
             meeting: meeting_label(bundle_id.as_deref(), &title).map(str::to_owned),
@@ -118,6 +150,7 @@ fn list(content: &Content) -> Vec<Source> {
             bundle_id,
             width: w as u32,
             height: h as u32,
+            on_screen,
         });
     }
     for display in unsafe { content.0.displays() }.iter() {
@@ -131,6 +164,7 @@ fn list(content: &Content) -> Vec<Source> {
             width: u32::try_from(w).unwrap_or(0),
             height: u32::try_from(h).unwrap_or(0),
             meeting: None,
+            on_screen: true,
         });
     }
     out
