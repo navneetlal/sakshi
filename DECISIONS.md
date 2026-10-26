@@ -687,10 +687,21 @@ considered. Newest entries go at the bottom.
     numbers, and `mark-micro-recording.svg`'s viewBox (44 × 44, clipping
     the bar) became 44 × 46. Files rewritten by hand lose their C2PA
     provenance block, which attested content that no longer exists.
+- **Type:** the brand's typefaces ship with the app, since it makes no
+  network requests, as pinned Fontsource packages (OFL 1.1) that Vite
+  bundles:
+  - Inter Variable for interface and body, at the brand's 16 px floor and
+    1.5 line height;
+  - Space Grotesk Medium (500) for headings, tracked −0.015em;
+  - Noto Sans Devanagari Variable as Inter's fallback, so Hindi
+    transcripts and titles render in the brand face rather than the
+    system's.
+
+  Each script's file loads only when that script is on screen (424 KB in
+  all). The licence texts ship in `public/licenses/`. Captions stay at 11
+  to 13 px, as the brand's own boards set them; body text and controls
+  are 16 px.
 - **Not done:**
-  - The app's type is still the system font. The brand's Inter and Space
-    Grotesk would need bundling, since the app makes no network requests,
-    and a change to `styles.css`.
   - The tray: the assets in `assets/brand/tray/` wait for one, with
     `trayTemplate*.png` swapping to `tray-recording*.png` while recording.
   - `icon.ico` holds only a 16 px image, which matters when Windows

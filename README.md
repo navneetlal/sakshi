@@ -339,9 +339,15 @@ nothing else. Interface colour comes from Ink, Paper, Graphite, and Rule.
 
 The mark comes in three cuts: wide for 64 px and up, stacked for squares
 of 24 px and up (app icons), and micro below 24 px (tray, favicon). The
-wordmark is Space Grotesk Medium, shipped as outlines. Logos, icons, the
-social card, and the full spec, including its six usage rules, are in
-[assets/brand/](assets/brand/README.md).
+wordmark is Space Grotesk Medium, shipped as outlines.
+
+The app sets its interface and body in Inter, its headings in Space
+Grotesk Medium, and Devanagari text, such as Hindi transcripts, in Noto
+Sans Devanagari. All three are bundled with the app under the SIL Open Font
+License 1.1, so nothing loads from the network.
+
+Logos, icons, the social card, and the full spec, including its six usage
+rules, are in [assets/brand/](assets/brand/README.md).
 
 ## License
 
