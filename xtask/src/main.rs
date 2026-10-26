@@ -1,6 +1,7 @@
 //! Developer tasks, run with `cargo xtask <command>`. Nothing here ships in
 //! the app; it only prepares a development checkout.
 
+mod fixtures;
 mod sidecar;
 mod util;
 
@@ -26,10 +27,14 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// Regenerate `fixtures/` from pinned AMI and FLEURS sources (about
+    /// 400 MB downloaded once into `target/fixture-sources/`). Needs ffmpeg.
+    Fixtures,
 }
 
 fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
         Command::FetchSidecar { variant, force } => sidecar::fetch(variant.as_deref(), force),
+        Command::Fixtures => fixtures::generate(),
     }
 }
