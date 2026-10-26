@@ -36,7 +36,7 @@ Design decisions and measurements are in [DECISIONS.md](DECISIONS.md).
 
 ## Install the app (macOS)
 
-Download `Sakshi_<version>_macos_aarch64.zip` from the
+Download `Sakshi_<version>_aarch64.dmg` from the
 [latest release](https://github.com/navneetlal/sakshi/releases/latest).
 
 ### Before you install
@@ -53,8 +53,9 @@ Download `Sakshi_<version>_macos_aarch64.zip` from the
 ### Install
 
 1. Optionally, check the download against the SHA-256 listed in the
-   release: `shasum -a 256 ~/Downloads/Sakshi_*_macos_aarch64.zip`.
-2. Unzip it and drag **Sakshi.app** into **Applications**.
+   release: `shasum -a 256 ~/Downloads/Sakshi_*_aarch64.dmg`.
+2. Open the DMG and drag **Sakshi** onto the **Applications** shortcut
+   beside it, then eject the disk image.
 3. Sakshi isn't notarized by Apple yet, so macOS blocks it the first time.
    Clear the download flag once, in Terminal:
 
@@ -173,6 +174,7 @@ To build the app as released:
 ```bash
 cd apps/sakshi-desktop
 pnpm run bundle         # -> target/release/bundle/macos/Sakshi.app
+                        #    and target/release/bundle/dmg/Sakshi_<version>_aarch64.dmg
 ```
 
 `Sakshi.app` (about 55 MB) contains the speech engine and the MCP server,
@@ -183,10 +185,9 @@ command until you set them up again. The app is ad-hoc signed, not signed
 with a Developer ID or notarized; see [Install](#install) for opening it on
 another Mac.
 
-To publish a release, zip the app with
-`ditto -c -k --sequesterRsrc --keepParent Sakshi.app Sakshi_<version>_macos_aarch64.zip`
-(which keeps its signature intact), and attach the zip and its SHA-256
-to a GitHub release for the tag `v<version>`.
+To publish a release, attach the DMG and its SHA-256 to a GitHub release
+for the tag `v<version>`. The DMG holds the app beside an Applications
+shortcut; `CI=true` skips Tauri's Finder scripting for its window layout.
 
 ### Recording a call (macOS 14+)
 
