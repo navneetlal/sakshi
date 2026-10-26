@@ -29,10 +29,24 @@ through Sakshi's `save_summary` tool.
 
 Design decisions and measurements are in [DECISIONS.md](DECISIONS.md).
 
+## Requirements
+
+- **macOS 14 or later on Apple Silicon** for recording and the desktop
+  app. Processing recordings with `sakshi-cli` also works on Windows and
+  Linux.
+- **FFmpeg 8.0 or newer**, installed separately; Sakshi doesn't include it.
+  On macOS: `brew install ffmpeg`. Sakshi looks for it on `PATH` and in
+  the Homebrew and MacPorts folders (`/opt/homebrew/bin`, `/usr/local/bin`,
+  `/opt/local/bin`), or uses the binary named by `SAKSHI_FFMPEG`. Tested
+  with FFmpeg 8.0.1 and 9.0.2. Releases back to 4.4 have every feature
+  Sakshi uses but aren't tested; the app's Settings page warns about
+  anything older than 8.0.
+- About 1 GB of disk for the speech models, downloaded on first use.
+
 ## Quick start (development checkout)
 
 You need the Rust toolchain (rustup installs the version pinned in
-`rust-toolchain.toml`) and `ffmpeg` on `PATH`.
+`rust-toolchain.toml`) and FFmpeg (see Requirements).
 
 ```bash
 # 1. The pinned NeMo-Speech.cpp runtime (checksum-verified) into target/sidecars/
@@ -87,11 +101,26 @@ To change the colours, edit or add a palette in
 
 When run with `pnpm tauri dev`, macOS attributes Screen Recording and
 Microphone access to your terminal app, as with the CLI.
-`pnpm tauri build --bundles app` produces `Sakshi.app`, but it doesn't
-bundle ffmpeg, the speech engine, or `sakshi-mcp` yet; that comes with
-packaging. Until then, run its binary from a terminal with
-`SAKSHI_FFMPEG`, `SAKSHI_NEMO_SPEECH`, and `SAKSHI_MCP_BIN` pointing at
-them.
+
+To build the app for installing:
+
+```bash
+cd apps/sakshi-desktop
+pnpm run bundle         # -> target/release/bundle/macos/Sakshi.app
+```
+
+`Sakshi.app` (about 55 MB) contains the speech engine and the MCP server,
+so it works on any Apple Silicon Mac with macOS 14+ and FFmpeg installed.
+Copy it to `/Applications`. AI clients are then set up to launch
+`/Applications/Sakshi.app/Contents/MacOS/sakshi-mcp`; if you move the app,
+the Connect page shows the clients as set up with a different command
+until you set them up again. Models and meetings stay in the data folder,
+outside the app.
+
+The app is ad-hoc signed but not yet signed with a Developer ID or
+notarized. On another Mac, open it the first time from System Settings >
+Privacy & Security > Open Anyway (or right-click > Open). Once installed,
+the app itself needs Screen Recording and Microphone access.
 
 ### Recording a call (macOS 14+)
 
@@ -274,13 +303,12 @@ Hindi clip from FLEURS, both CC BY 4.0. See
 - A window that is minimized or on another desktop can be picked, but
   macOS may not deliver new video frames for it until it's visible again
   (not yet checked live; DECISIONS.md D26). Audio is unaffected.
-- The desktop app doesn't bundle its helper programs yet (see above).
+- `Sakshi.app` isn't notarized, so macOS asks before opening it the first
+  time (see above).
 
 ## Planned
 
-- Windows and Linux capture (M5, M6).
-- Packaging: the app bundle with an LGPL FFmpeg build, the speech engine,
-  and `sakshi-mcp` inside.
+- Windows and Linux capture (M5, M6), with their app packages.
 - **Converting NeMo checkpoints to GGUF**, so `.nemo` fine-tunes from Hugging
   Face can be added as custom models. Today only ready-made GGUF files are
   accepted.

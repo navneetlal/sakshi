@@ -202,8 +202,7 @@ considered. Newest entries go at the bottom.
 - **Alternatives:** always re-encoding to float32; ffmpeg's scene-detection
   filter (scores consecutive frames, not frames against the last kept one);
   writing JPEGs from ffmpeg (would need a second pass to know which to keep).
-  Development uses the system ffmpeg; release builds will bundle an LGPL
-  build (M4).
+  Sakshi uses the FFmpeg the user installed; it doesn't ship one (D29).
 
 ## D12. Mic-bleed removal works on segments and on runs inside them
 
@@ -564,3 +563,70 @@ considered. Newest entries go at the bottom.
   download, and "Add Sakshi to Claude Desktop" in the window. No UI
   automation is available here; the backend paths behind them have unit
   tests, and downloads were verified from the CLI in M1.
+
+## D29. FFmpeg is a prerequisite, not bundled
+
+- **Decision:** the user's choice, reversing the kickoff spec's "bundled
+  LGPL FFmpeg sidecar". Users install FFmpeg 8.0 or newer themselves
+  (`brew install ffmpeg`), and the README lists it under Requirements.
+  `Ffmpeg::locate` checks:
+  1. `$SAKSHI_FFMPEG`;
+  2. next to the executable;
+  3. `PATH`;
+  4. the Homebrew and MacPorts folders (`/opt/homebrew/bin`,
+     `/usr/local/bin`, `/opt/local/bin`; `/usr/bin` and `/usr/local/bin` on
+     Linux).
+
+  The fourth step matters because an app opened from the Finder gets a
+  `PATH` without Homebrew. The Settings page names the version found and
+  flags anything older than 8.0.
+- **Supported versions:** 8.0 or newer, the oldest tested (8.0.1 in the
+  Ubuntu CI job, 9.0.2 on Windows CI and on macOS). Every option Sakshi
+  passes, such as `amix` with `normalize`, the fragmented-MP4 flags, and
+  VideoToolbox's `-realtime`, exists since FFmpeg 4.4. Older releases may
+  work but aren't tested. Development builds, which report no release
+  number, aren't flagged.
+- **Why:** Homebrew's FFmpeg includes GPL components (x264, x265), so
+  shipping it inside an MIT app isn't an option. An LGPL build means
+  building FFmpeg from source, a large C build. Users who record calls on
+  a Mac can install FFmpeg in one command, and Sakshi then never
+  redistributes FFmpeg at all.
+- **Alternatives:** building an LGPL FFmpeg from pinned source in
+  `cargo xtask` and bundling it (the spec's plan); a third-party prebuilt
+  LGPL binary.
+
+## D30. What the app bundle contains
+
+- **Decision:** `pnpm run bundle` runs `cargo xtask prepare-bundle`, then
+  `tauri build` with `tauri.bundle.conf.json`. `prepare-bundle` stages
+  into `src-tauri/bundle/` (git-ignored):
+  - a release `sakshi-mcp`, named for Tauri's `externalBin`. It lands in
+    `Contents/MacOS/`, next to the app, where `locate_mcp_server` looks;
+  - the pinned nemo-speech sidecar with its `share/` data and licenses.
+    It lands in `Contents/Resources/nemo-speech/`, where `locate_sidecar`
+    now also looks.
+
+  Only the libraries the engine loads are copied: the `@rpath`
+  references, followed with `otool -L`, as real files under the names the
+  loader asks for (10 libraries, 13 MB, instead of 26 MB with every
+  version symlink copied). The bundle is ad-hoc signed as a whole (signing
+  identity `-`), so its seal covers the engine. The bundle-only settings
+  live in their own config file, because Tauri's build script requires
+  `externalBin` and resource files to exist; ordinary builds, tests, and
+  CI don't need the staged files.
+- **Why:** an installed app can't depend on a development checkout. The
+  first `Sakshi.app` built in M4 found its helpers only through
+  `target/`, which the user caught.
+- **Verification (macOS 27, Apple Silicon, 2026-10-26):**
+  - `codesign --verify --deep --strict` passes on the 55 MB bundle.
+  - The bundle was launched with a Finder-like environment (`PATH` of
+    `/usr/bin:/bin:/usr/sbin:/sbin`, no Sakshi variables except the data
+    folder). Settings found FFmpeg 9.0.2 in `/opt/homebrew/bin`, the
+    engine inside the bundle, and the models.
+  - The AMI fixture was processed with the bundled engine under the same
+    environment. With English pinned, the 17 segments, speakers, and text
+    match the development engine's exactly.
+- **Not done:** Developer ID signing and notarization (the spec's
+  "signed installers", still Later). Until then, macOS asks before
+  opening the app on another Mac. Bundling is macOS-only; Windows and
+  Linux follow with M5 and M6.
