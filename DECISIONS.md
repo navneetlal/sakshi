@@ -89,3 +89,85 @@ considered. Newest entries go at the bottom.
   LFS type reads `sha256` while the API sends `oid`, and its HEAD-based
   metadata call fails on Xet-backed files after the CDN redirect.
 - **Alternatives:** a small downloader on `ureq`; hf-hub 0.4.
+
+## D9. nemo-speech command lines (confirmed against v0.2.0)
+
+- **Decision:** both tracks run through `nemo-speech transcribe` in its
+  cache-aware streaming mode with the largest right context (13 frames,
+  1.12 s chunks). Model paths are always absolute local files, so the CLI never
+  touches its own model cache or the network.
+
+  `system` track, transcribe and diarize in one pass:
+
+  ```
+  nemo-speech transcribe <work>/system.wav \
+    --model <models>/…/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf \
+    --diar-model <models>/…/Nemotron-3-Diarization.q8_0.gguf --diar-preset v3-offline \
+    --stream --asr.streaming.rnnt_right_context 13 \
+    --language <auto|code> --device auto \
+    --format json --output <work>/system.nemo.json --force
+  ```
+
+  `mic` track: the same without `--diar-model` and `--diar-preset`.
+
+  stderr confirms the geometry:
+  `[asr] mode=streaming head=rnnt left=56 center=1 right=13 attention=70 encoder-frames step=1120ms`.
+  Sakshi logs this line and fails the run if it reports a different right
+  context.
+
+  JSON output (excerpt of `crates/sakshi-asr/tests/data/ami_system.json`):
+
+  ```json
+  {
+    "file": "system.wav",
+    "text": "From a plain text file back into organizer by who which speaker …",
+    "confidence": 1,
+    "duration": 60,
+    "languages": [],
+    "words": [
+      {"word": "From", "start": 1.28, "end": 1.36, "confidence": 1, "speaker": 1},
+      {"word": "a", "start": 1.44, "end": 1.52, "confidence": 1, "speaker": 1},
+      …
+    ]
+  }
+  ```
+
+  Times are seconds at 80 ms resolution. `speaker` starts at 1 and is
+  omitted when the diarizer assigned no one. `confidence` is always 1 for
+  this model in v0.2.0.
+- **Why:**
+  - **Chunk size:** without `--stream`, files under 6.67 min take the offline
+    path, whose attention is fixed by the GGUF at right context 3 (320 ms).
+    `rnnt_right_context` only affects the streaming path, and its documented
+    `-1 = model max` keeps the GGUF default rather than the maximum. On the
+    AMI test clip, right context 13 got "who which speaker", "we're gonna
+    do", and "evaluation" right where offline mode did not.
+  - **Speed:** on Apple Silicon (Metal) the 60 s clip takes 3.7 s with
+    diarization, model load included. The first run after install takes
+    about 22 s while Metal compiles its kernels.
+  - **Diarizer preset:** `v3-offline` and the default streaming preset gave
+    identical speaker turns on the clip. Both matched the AMI reference for
+    the three main speakers; one-word backchannels were not transcribed.
+- **Alternatives:** the default offline path (less accurate, but reports the
+  detected language); a separate `nemo-speech diarize` pass merged by
+  overlap (see D4).
+
+## D10. Language: auto by default, pinned codes validated first
+
+- **Decision:** the language is `auto` unless pinned in `config.json`, in a
+  meeting's `meeting.json`, or with `--language`. A pinned code must appear
+  in the model's own language table (the GGUF key
+  `asr.rnnt.prompt_dictionary`, e.g. `hi`, `hi-IN`, `en-US`), or the run fails
+  before transcription starts. `transcript.json` lists the pinned code, or
+  whatever languages the engine reported.
+- **Why:** the runtime looks codes up by exact match and silently falls
+  back to auto-detection for anything unknown, so a typo would quietly do
+  the wrong thing. In streaming mode v0.2.0 transcribes Hindi correctly under
+  `auto`, but reports no detected language (`"languages": []`) and drops the
+  final sentence punctuation. The offline path reports both but is less
+  accurate (D9), so for now an auto-detected meeting has an empty language
+  list.
+- **Alternatives:** a second, offline pass over a short excerpt just to read
+  the detected language (about 3 s extra per track); guessing from the script
+  of the text (Devanagari alone doesn't distinguish Hindi from Marathi or
+  Nepali).

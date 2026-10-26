@@ -1,0 +1,5 @@
+[nemo-speech] transcribe session started
+[asr] model=.nemotron-3.5-asr-streaming-0.6b.q8_0.gguf head=rnnt backend=MTL0
+[asr] mode=streaming head=rnnt left=56 center=1 right=13 attention=70 encoder-frames step=1120ms
+mic.wav -> fleurs_hi_mic.json
+[nemo-speech] transcribe session finished

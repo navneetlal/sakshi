@@ -1953,6 +1953,15 @@ checksum = "3944826ff8fa8093089aba3acb4ef44b9446a99a16f3bf4e74af3f77d340ab7d"
 [[package]]
 name = "sakshi-asr"
 version = "0.1.0"
+dependencies = [
+ "sakshi-core",
+ "sakshi-models",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tracing",
+]
 
 [[package]]
 name = "sakshi-cli"
