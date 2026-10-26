@@ -1,13 +1,11 @@
 //! Developer tasks, run with `cargo xtask <command>`. Nothing here ships in
 //! the app; it only prepares a development checkout.
 
+mod brand;
 mod bundle;
 mod fixtures;
-mod icon;
 mod sidecar;
 mod util;
-
-use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
@@ -34,11 +32,11 @@ enum Command {
     /// Regenerate `fixtures/` from pinned AMI and FLEURS sources (about
     /// 400 MB downloaded once into `target/fixture-sources/`). Needs ffmpeg.
     Fixtures,
-    /// Draw the 1024x1024 app icon that `pnpm tauri icon` turns into every
-    /// platform's icon files.
-    Icon {
-        #[arg(long, default_value = "apps/sakshi-desktop/src-tauri/icons/source.png")]
-        out: PathBuf,
+    /// Redraw the mark in `assets/brand/`'s PNG icons from the geometry in
+    /// its README, keeping each tile. Without --write, only reports.
+    BrandIcons {
+        #[arg(long)]
+        write: bool,
     },
     /// Stage the nemo-speech sidecar and a release `sakshi-mcp` in
     /// `apps/sakshi-desktop/src-tauri/bundle/` for the app bundle (macOS).
@@ -50,7 +48,7 @@ fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
         Command::FetchSidecar { variant, force } => sidecar::fetch(variant.as_deref(), force),
         Command::Fixtures => fixtures::generate(),
-        Command::Icon { out } => icon::generate(&out),
+        Command::BrandIcons { write } => brand::run(write),
         Command::PrepareBundle => bundle::prepare(),
     }
 }

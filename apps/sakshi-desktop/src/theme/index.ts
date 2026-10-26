@@ -8,6 +8,7 @@
 import "./base.css";
 import "./palettes/graphite-amber.css";
 import "./palettes/paper-ink.css";
+import "./palettes/sakshi.css";
 import "./palettes/stone-sage.css";
 
 export interface Palette {
@@ -18,9 +19,14 @@ export interface Palette {
 
 export const PALETTES: Palette[] = [
   {
+    id: "sakshi",
+    name: "Sakshi",
+    description: "The brand: Ink and Paper, with Tally for recording only.",
+  },
+  {
     id: "graphite-amber",
     name: "Graphite & Amber",
-    description: "Warm neutrals with the icon's amber for actions.",
+    description: "Warm neutrals with amber for actions.",
   },
   {
     id: "paper-ink",
@@ -34,7 +40,7 @@ export const PALETTES: Palette[] = [
   },
 ];
 
-export const DEFAULT_PALETTE = "graphite-amber";
+export const DEFAULT_PALETTE = "sakshi";
 
 export type Mode = "system" | "light" | "dark";
 export type Scheme = "light" | "dark";

@@ -1,0 +1,48 @@
+/* Sakshi: the brand's own palette (assets/brand/README.md). Ink, Paper,
+   Graphite and Rule carry the interface; Ink is also the accent, so actions
+   read as type. Tally, the fifth colour, is not here: it marks recording
+   only, through --tally in base.css, and never sets or sits behind text.
+   The tokens are listed in graphite-amber.css.
+
+   Light is Paper with Ink type and Graphite secondary type (7.4:1).
+   Dark is the mark reversed on Ink: Paper type, Ink-derived surfaces. */
+
+[data-palette="sakshi"] {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-2: #f2f2ef;
+  --border: #e0e1de;
+  --text: #12151c;
+  --muted: #4a5160;
+  --accent: #12151c;
+  --accent-ink: #f7f7f5;
+  --accent-text: #12151c;
+  --accent-soft: #ecece8;
+  --sidebar: #f2f2ef;
+  --sidebar-border: #e0e1de;
+  --sidebar-text: #4a5160;
+  --sidebar-text-strong: #12151c;
+  --sidebar-hover: rgb(18 21 28 / 5%);
+  --sidebar-active: #e6e6e2;
+}
+
+[data-palette="sakshi"][data-scheme="dark"] {
+  --bg: #12151c;
+  --surface: #181c25;
+  --surface-2: #1f2430;
+  --border: #2b3040;
+  --text: #f7f7f5;
+  --muted: #c7cad1;
+  --accent: #f7f7f5;
+  --accent-ink: #12151c;
+  --accent-text: #f7f7f5;
+  --accent-soft: #252b38;
+  --sidebar: #161a22;
+  --sidebar-border: #232834;
+  --sidebar-text: #c7cad1;
+  --sidebar-text-strong: #f7f7f5;
+  --sidebar-hover: rgb(255 255 255 / 5%);
+  --sidebar-active: #232834;
+  /* Switches that are on: an Ink knob on the Paper track. */
+  --knob-on: #12151c;
+}

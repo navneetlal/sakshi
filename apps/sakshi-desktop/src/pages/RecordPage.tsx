@@ -74,7 +74,7 @@ function Recording() {
       </div>
       <ErrorNotice error={error} />
       <button
-        className="btn danger large"
+        className="btn primary large"
         onClick={() => api.stopRecording().catch((e) => setError(errorText(e)))}
       >
         Stop recording

@@ -1,4 +1,9 @@
-# Sakshi
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/logo-horizontal-reverse.svg">
+    <img src="assets/brand/logo-horizontal.svg" alt="Sakshi" width="300">
+  </picture>
+</h1>
 
 Sakshi (साक्षी, "the witness") records video calls in Zoom, Google Meet,
 Microsoft Teams, or any window, transcribes them on your machine after the
@@ -91,13 +96,15 @@ pnpm tauri dev          # builds and opens the app; the UI reloads as you edit
 - **Connect:** each AI client's status and setup snippet. Sakshi can add
   itself to Claude Desktop's and Cursor's config files, backing them up
   first.
-- **Settings:** transcription language, appearance (three colour palettes,
-  System/Light/Dark), the consent reminder, the data folder, and whether
-  ffmpeg, the speech engine, and the models are found.
+- **Settings:** transcription language, appearance (the Sakshi brand
+  palette by default, three alternatives, and System/Light/Dark), the
+  consent reminder, the data folder, and whether ffmpeg, the speech engine,
+  and the models are found.
 
 To change the colours, edit or add a palette in
 `apps/sakshi-desktop/src/theme/palettes/` and list it in
 `src/theme/index.ts`. The rest of the UI only uses the palette's tokens.
+Whatever the palette, recording is shown by the Tally disc (see Brand).
 
 When run with `pnpm tauri dev`, macOS attributes Screen Recording and
 Microphone access to your terminal app, as with the CLI.
@@ -280,7 +287,7 @@ cargo test -p sakshi-models -- --ignored    # Hugging Face network checks
 cargo test -p sakshi-desktop -- --ignored   # records the running app's window, then processes it (macOS)
 (cd apps/sakshi-desktop && pnpm run build)  # type-check and build the UI
 cargo xtask fixtures                        # regenerate fixtures/ from pinned sources
-cargo xtask icon                            # redraw the app icon's source image
+cargo xtask brand-icons                     # check the brand icons against the spec (--write redraws them)
 ```
 
 The fixtures are a 60 s English meeting from the AMI corpus and a two-speaker
@@ -314,6 +321,27 @@ Hindi clip from FLEURS, both CC BY 4.0. See
   accepted.
 - A pyannote fallback for meetings with more than 8 speakers.
 - Signed installers and `.mcpb` packaging for Claude Desktop.
+
+## Brand
+
+The mark is a filled disc, the recording, resolving into three bars, the
+transcript. The disc is in Tally amber: the one warm colour in the identity
+and the one thing that signals state, so in the app it marks recording and
+nothing else. Interface colour comes from Ink, Paper, Graphite, and Rule.
+
+| | Hex | Use |
+|---|---|---|
+| Ink | `#12151C` | Bars, wordmark, type, dark surfaces |
+| Tally | `#E8921E` | The disc only, never type or behind type |
+| Paper | `#F7F7F5` | The page; the mark reversed on Ink |
+| Graphite | `#4A5160` | Secondary type |
+| Rule | `#E0E1DE` | Hairlines and card edges |
+
+The mark comes in three cuts: wide for 64 px and up, stacked for squares
+of 24 px and up (app icons), and micro below 24 px (tray, favicon). The
+wordmark is Space Grotesk Medium, shipped as outlines. Logos, icons, the
+social card, and the full spec, including its six usage rules, are in
+[assets/brand/](assets/brand/README.md).
 
 ## License
 

@@ -21,7 +21,16 @@ const meetingStatus: Record<MeetingStatus, [Tone, string]> = {
 
 export function MeetingStatusBadge({ status }: { status: MeetingStatus }) {
   const [tone, label] = meetingStatus[status];
-  return status === "processed" ? null : <Badge tone={tone}>{label}</Badge>;
+  if (status === "processed") return null;
+  return (
+    <Badge tone={tone}>
+      {/* Recording shows as the Tally disc; the label stays in text colour. */}
+      {status === "recording" && (
+        <span className="rec-dot" style={{ width: 8, height: 8 }} aria-hidden="true" />
+      )}
+      {label}
+    </Badge>
+  );
 }
 
 export function Notice({

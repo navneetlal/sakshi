@@ -17,14 +17,21 @@
   --danger: #b23b3b;
   --danger-soft: #f8e5e3;
   --on-danger: #ffffff;
-  --live: #cf3f3f;
-  --live-soft: #f8e2e0;
-  --live-text: #a32f2f;
+  /* Recording is shown by the Tally disc, the brand's one state signal,
+     on every palette and background (DECISIONS.md D31). Tally never
+     carries or sits behind text, so recording labels keep the text colour
+     on a neutral ground. Red (--danger) is for errors only. */
+  --tally: #e8921e;
+  --live: var(--tally);
+  --live-soft: var(--surface-2);
+  --live-text: var(--text);
   --overlay: rgb(20 18 15 / 40%);
   --shadow: 0 1px 2px rgb(30 25 15 / 5%);
   --shadow-raised: 0 18px 48px rgb(0 0 0 / 18%);
   --media-bg: #000000;
   --knob: #ffffff;
+  /* The knob of a switch that's on, over --accent. */
+  --knob-on: var(--knob);
   --speaker-0: #3f6fb5;
   --speaker-1: #8c55a8;
   --speaker-2: #2c8079;
@@ -42,9 +49,6 @@
   --danger: #ec8a84;
   --danger-soft: #3a2120;
   --on-danger: #ffffff;
-  --live: #f0645c;
-  --live-soft: rgb(240 100 92 / 14%);
-  --live-text: #f5aaa5;
   --overlay: rgb(0 0 0 / 55%);
   --shadow: none;
   --shadow-raised: 0 18px 48px rgb(0 0 0 / 45%);

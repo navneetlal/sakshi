@@ -448,6 +448,8 @@ button:focus-visible {
 }
 .toggle input:checked + .switch::after {
   transform: translateX(14px);
+  /* A light accent (Sakshi's Paper in dark) needs a dark knob. */
+  background: var(--knob-on);
 }
 .toggle input:focus-visible + .switch {
   outline: 2px solid var(--accent);

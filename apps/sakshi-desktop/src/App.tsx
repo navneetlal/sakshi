@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { clock } from "./format";
+import { Mark } from "./Logo";
 import { ConnectPage } from "./pages/ConnectPage";
 import { MeetingsPage } from "./pages/MeetingsPage";
 import { ModelsPage } from "./pages/ModelsPage";
@@ -61,9 +62,10 @@ export function App() {
   return (
     <div className="app">
       <nav className="sidebar" aria-label="Sakshi">
+        {/* The wide cut at 24 px tall is 64.5 px wide, its minimum; the
+            sidebar's padding gives it its clear space. */}
         <div className="brand">
-          <img src="/icon.png" alt="" width="28" height="28" />
-          <span>Sakshi</span>
+          <Mark cut="wide" height={24} label="Sakshi" />
         </div>
         <ul>
           {pages.map((p) => (

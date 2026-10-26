@@ -630,3 +630,70 @@ considered. Newest entries go at the bottom.
   "signed installers", still Later). Until then, macOS asks before
   opening the app on another Mac. Bundling is macOS-only; Windows and
   Linux follow with M5 and M6.
+
+## D31. The identity: a disc resolving into three bars
+
+- **Decision:** the mark is a filled disc, the recording, resolving into
+  three bars, the transcript. Bars are flush left and ragged right, longest
+  to shortest: the recording is the fixed thing, the transcript is what
+  varies. Five colours:
+  - Ink `#12151C`, Paper `#F7F7F5`, Graphite `#4A5160`, and Rule `#E0E1DE`
+    carry everything else;
+  - Tally amber `#E8921E` colours the disc, and only the disc.
+
+  Tally is the one warm element and the one state signal. It is 2.29:1 on
+  Paper, so it never sets type or sits behind it.
+
+  There are three cuts, each on its own field:
+  - **wide** (86 × 32), for lockups and headers at 64 px and up;
+  - **stacked** (44 × 64), for squares at 24 px and up, such as app icons;
+  - **micro** (44 × 46, one thicker bar), below 24 px: tray, menu bar,
+    favicon.
+
+  The wordmark is Space Grotesk Medium, tracked −0.035em, shipped as
+  outlines so no font is needed and it is never re-set as live text. The
+  geometry, files, and six usage rules are in `assets/brand/README.md`. The
+  design canvas, with its directions explored, is the source.
+- **In the app:**
+  - The icons come from `assets/brand/` (the `.icns` built from the
+    squircle iconset).
+  - The favicon uses the micro cut.
+  - `src/Logo.tsx` inlines the three cuts, with bars in the current text
+    colour and the disc in `--tally`. The wide cut heads the sidebar at
+    64 × 24, and the stacked cut marks the empty meeting pane.
+  - The `sakshi` palette, built from the five colours, is the default. Ink
+    is its accent, so actions read as type.
+  - Recording is the Tally disc in every palette: the pulsing dot, the
+    sidebar timer, and the meeting badge, with labels in the text colour
+    on a neutral ground. Red is kept for errors. The Stop button is a
+    primary (Ink) button, not a red one.
+  - A switch that's on takes `--knob-on`, white by default. The Sakshi
+    palette sets it to Ink in dark, where its accent is Paper and a white
+    knob vanished. That token reference is the only change to `styles.css`.
+  - The mark sets its own size, no stroke, and no selection, so the
+    sidebar's icon rules can't shrink or outline it.
+- **Assets corrected to the spec** (the user chose the README's geometry
+  over the files):
+  - The committed stacked cut, every icon PNG and the favicon had drawn
+    the stacked cut with a smaller disc and centred bars, which the
+    README's rule 3 forbids.
+  - `cargo xtask brand-icons --write` redrew the glyph in 23 PNGs from the
+    README geometry. Each tile and squircle was kept pixel for pixel. The
+    tool first checks that each file's existing glyph sits at the 58%
+    placement it uses.
+  - `icon-24` now takes the stacked cut ("24 px and up"). The favicons and
+    16 pt icons take the micro cut.
+  - The stacked SVGs and `favicon.svg` were rewritten from the README
+    numbers, and `mark-micro-recording.svg`'s viewBox (44 × 44, clipping
+    the bar) became 44 × 46. Files rewritten by hand lose their C2PA
+    provenance block, which attested content that no longer exists.
+- **Not done:**
+  - The app's type is still the system font. The brand's Inter and Space
+    Grotesk would need bundling, since the app makes no network requests,
+    and a change to `styles.css`.
+  - The tray: the assets in `assets/brand/tray/` wait for one, with
+    `trayTemplate*.png` swapping to `tray-recording*.png` while recording.
+  - `icon.ico` holds only a 16 px image, which matters when Windows
+    packaging lands (M5).
+- **Alternatives:** keeping red for recording (two signals for one state);
+  shipping the centred stacked cut and changing the spec instead.

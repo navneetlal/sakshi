@@ -11,6 +11,7 @@ import {
   speakerClass,
 } from "../components";
 import { duration, timestamp, when } from "../format";
+import { Mark } from "../Logo";
 import { useApp } from "../state";
 
 export function MeetingsPage({
@@ -90,7 +91,13 @@ export function MeetingsPage({
         {selectedId ? (
           <MeetingView key={selectedId} id={selectedId} />
         ) : (
-          <div className="empty-detail muted">Choose a meeting to see its transcript.</div>
+          <div className="empty-detail muted">
+            {/* Clear space below the mark: half its height. */}
+            <div style={{ marginBottom: 24 }}>
+              <Mark cut="stacked" height={48} />
+            </div>
+            Choose a meeting to see its transcript.
+          </div>
         )}
       </section>
     </div>
