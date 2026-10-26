@@ -34,6 +34,80 @@ through Sakshi's `save_summary` tool.
 
 Design decisions and measurements are in [DECISIONS.md](DECISIONS.md).
 
+## Install the app (macOS)
+
+Download `Sakshi_<version>_macos_aarch64.zip` from the
+[latest release](https://github.com/navneetlal/sakshi/releases/latest).
+
+### Before you install
+
+- **A Mac with Apple Silicon** (M1 or later) on **macOS 14 Sonoma or
+  later**.
+- **FFmpeg 8.0 or newer.** Sakshi doesn't include it. With
+  [Homebrew](https://brew.sh): `brew install ffmpeg`.
+- **About 1 GB of free disk** for the speech models, which the app
+  downloads when you ask.
+- An internet connection for that download only. Recording, transcription,
+  and everything else run offline on your Mac.
+
+### Install
+
+1. Optionally, check the download against the SHA-256 listed in the
+   release: `shasum -a 256 ~/Downloads/Sakshi_*_macos_aarch64.zip`.
+2. Unzip it and drag **Sakshi.app** into **Applications**.
+3. Sakshi isn't notarized by Apple yet, so macOS blocks it the first time.
+   Clear the download flag once, in Terminal:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Sakshi.app
+   ```
+
+   Or open the app, then choose **Open Anyway** under System Settings >
+   Privacy & Security. The Terminal command also clears the speech engine
+   and MCP server inside the app, so macOS doesn't ask again for each.
+4. Open Sakshi from Applications.
+
+### First run
+
+1. **Models:** download both default models (about 850 MB in all),
+   accepting their license.
+2. **Settings:** under Processing tools, FFmpeg, the speech engine, and the
+   models should all show a check mark. If FFmpeg is missing, install it
+   and reopen the page.
+3. **Record:** the first time, macOS asks for **Screen Recording** and
+   **Microphone** access. Turn Sakshi on under System Settings > Privacy &
+   Security for each, then quit and reopen Sakshi.
+4. **Connect** (optional): to let Claude or another AI client read your
+   meetings, open Connect and follow the steps for your client. Sakshi can
+   add itself to Claude Desktop and Cursor for you.
+
+### Using the app
+
+- **Record:** pick the call's window (likely meetings are listed first,
+  including minimized ones and those on other desktops) or a whole
+  display, choose the app's audio and your microphone, tell the
+  participants, and start. Stop when the call ends. Sakshi then
+  transcribes the recording on your Mac and shows each step as it goes.
+- **Meetings:** search titles and transcripts. Open a meeting for the
+  video, the transcript with speakers (click a time to play from there),
+  key frames, and summaries saved by AI clients. Process again with
+  another language, or process a recording that never was.
+- **Models:** download the default models, or add a GGUF model from any
+  Hugging Face repository.
+- **Connect:** each AI client's status and setup steps.
+- **Settings:** the transcription language, appearance (palette and
+  light/dark), the reminder to tell participants, the data folder, and
+  whether FFmpeg, the speech engine, and the models are found.
+
+Sakshi never summarizes. Ask your AI client to summarize a meeting; it
+reads the transcript through Sakshi and saves the summary back, where it
+shows under the meeting's Summaries.
+
+**Updating:** download the new release and replace the app in
+Applications, then clear the download flag again. **Uninstalling:** delete
+the app. Models, settings, and meetings stay in
+`~/Library/Application Support/Sakshi` until you delete that folder.
+
 ## Requirements
 
 - **macOS 14 or later on Apple Silicon** for recording and the desktop
@@ -83,23 +157,8 @@ pnpm install
 pnpm tauri dev          # builds and opens the app; the UI reloads as you edit
 ```
 
-- **Record:** pick a window or display (likely meetings first, then other
-  windows, including minimized ones and those on other desktops), choose
-  the app's audio and your microphone, and start. A timer runs while
-  recording. Stopping hands the meeting to processing, shown step by step.
-- **Meetings:** search titles and transcripts; open a meeting to see the
-  video, the transcript with speakers (click a time to play from there),
-  key frames, and summaries saved by AI clients. Process again with
-  another language, or process a recording that never was.
-- **Models:** download the default models after accepting their license,
-  with progress; add a GGUF model from any Hugging Face repository.
-- **Connect:** each AI client's status and setup snippet. Sakshi can add
-  itself to Claude Desktop's and Cursor's config files, backing them up
-  first.
-- **Settings:** transcription language, appearance (the Sakshi brand
-  palette by default, three alternatives, and System/Light/Dark), the
-  consent reminder, the data folder, and whether ffmpeg, the speech engine,
-  and the models are found.
+The pages are described under [Using the app](#using-the-app). Appearance
+offers the Sakshi brand palette by default and three alternatives.
 
 To change the colours, edit or add a palette in
 `apps/sakshi-desktop/src/theme/palettes/` and list it in
@@ -109,7 +168,7 @@ Whatever the palette, recording is shown by the Tally disc (see Brand).
 When run with `pnpm tauri dev`, macOS attributes Screen Recording and
 Microphone access to your terminal app, as with the CLI.
 
-To build the app for installing:
+To build the app as released:
 
 ```bash
 cd apps/sakshi-desktop
@@ -118,16 +177,16 @@ pnpm run bundle         # -> target/release/bundle/macos/Sakshi.app
 
 `Sakshi.app` (about 55 MB) contains the speech engine and the MCP server,
 so it works on any Apple Silicon Mac with macOS 14+ and FFmpeg installed.
-Copy it to `/Applications`. AI clients are then set up to launch
-`/Applications/Sakshi.app/Contents/MacOS/sakshi-mcp`; if you move the app,
-the Connect page shows the clients as set up with a different command
-until you set them up again. Models and meetings stay in the data folder,
-outside the app.
+AI clients are set up to launch the `sakshi-mcp` inside it, so if you move
+the app, the Connect page shows the clients as set up with a different
+command until you set them up again. The app is ad-hoc signed, not signed
+with a Developer ID or notarized; see [Install](#install) for opening it on
+another Mac.
 
-The app is ad-hoc signed but not yet signed with a Developer ID or
-notarized. On another Mac, open it the first time from System Settings >
-Privacy & Security > Open Anyway (or right-click > Open). Once installed,
-the app itself needs Screen Recording and Microphone access.
+To publish a release, zip the app with
+`ditto -c -k --sequesterRsrc --keepParent Sakshi.app Sakshi_<version>_macos_aarch64.zip`
+(which keeps its signature intact), and attach the zip and its SHA-256
+to a GitHub release for the tag `v<version>`.
 
 ### Recording a call (macOS 14+)
 
@@ -310,8 +369,8 @@ Hindi clip from FLEURS, both CC BY 4.0. See
 - A window that is minimized or on another desktop can be picked, but
   macOS may not deliver new video frames for it until it's visible again
   (not yet checked live; DECISIONS.md D26). Audio is unaffected.
-- `Sakshi.app` isn't notarized, so macOS asks before opening it the first
-  time (see above).
+- `Sakshi.app` isn't notarized, so macOS blocks it the first time until
+  you clear its download flag (see [Install](#install)).
 
 ## Planned
 
