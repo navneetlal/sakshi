@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { Badge, Dialog, ErrorNotice, JobSteps, Notice, Toggle } from "../components";
 import { clock } from "../format";
+import { tidy } from "../paths";
 import { isActive, useApp, useJobs } from "../state";
 
 const key = (id: SourceId) => `${id.kind}:${id.id}`;
@@ -177,7 +178,7 @@ function Setup() {
         <Notice tone="warn" title="Recordings will be saved but not transcribed yet">
           <ul className="plain">
             {setupProblems.map((p) => (
-              <li key={p.detail}>{p.detail}</li>
+              <li key={p.detail}>{tidy(p.detail)}</li>
             ))}
           </ul>
         </Notice>

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import type { Job, MeetingStatus, StepState } from "./api";
 import { stepName } from "./format";
+import { tidy } from "./paths";
 
 export type Tone = "neutral" | "accent" | "ok" | "warn" | "danger" | "live";
 
@@ -46,7 +47,7 @@ export function Notice({
 }
 
 export function ErrorNotice({ error }: { error: string | null }) {
-  return error ? <Notice tone="danger">{error}</Notice> : null;
+  return error ? <Notice tone="danger">{tidy(error)}</Notice> : null;
 }
 
 export function Dialog({
@@ -105,7 +106,7 @@ export function JobSteps({ job }: { job: Job }) {
           </li>
         ))}
       </ol>
-      {job.state === "failed" && <p className="error-text">{job.error}</p>}
+      {job.state === "failed" && <p className="error-text">{tidy(job.error)}</p>}
     </div>
   );
 }

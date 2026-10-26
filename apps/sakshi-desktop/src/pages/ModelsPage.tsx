@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, errorText, type InspectedModel, type Model } from "../api";
 import { Badge, Dialog, ErrorNotice } from "../components";
 import { size } from "../format";
+import { tidy } from "../paths";
 import { useApp } from "../state";
 
 export function ModelsPage() {
@@ -95,7 +96,7 @@ export function ModelsPage() {
                       </div>
                     ) : (
                       <>
-                        {d?.state === "failed" && <p className="error-text small">{d.error}</p>}
+                        {d?.state === "failed" && <p className="error-text small">{tidy(d.error)}</p>}
                         <button className="btn primary" onClick={() => setConfirm(m)}>
                           {d?.state === "failed" ? "Try again" : "Download"}
                         </button>

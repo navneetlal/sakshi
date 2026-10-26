@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, errorText, type ClientSetup, type ClientStatus, type McpStatus } from "../api";
 import { Badge, ErrorNotice, Notice, Snippet, type Tone } from "../components";
+import { tidy } from "../paths";
 
 const statusBadge: Record<ClientStatus, [Tone, string]> = {
   configured: ["ok", "Connected"],
@@ -45,7 +46,7 @@ export function ConnectPage() {
       )}
       {status?.server && (
         <p className="muted small">
-          Server: <span className="mono">{status.server}</span>
+          Server: <span className="mono">{tidy(status.server)}</span>
         </p>
       )}
       <div className="clients">
@@ -88,8 +89,8 @@ function ClientCard({ setup, onChanged }: { setup: ClientSetup; onChanged: () =>
       } else {
         const restart =
           setup.client === "claude-desktop" ? " Quit and reopen Claude Desktop to use it." : "";
-        const backup = outcome.backup ? ` The previous file is saved as ${outcome.backup}.` : "";
-        setMessage(`Added Sakshi to ${outcome.path}.${backup}${restart}`);
+        const backup = outcome.backup ? ` The previous file is saved as ${tidy(outcome.backup)}.` : "";
+        setMessage(`Added Sakshi to ${tidy(outcome.path)}.${backup}${restart}`);
       }
       onChanged();
     } catch (e) {
@@ -105,14 +106,16 @@ function ClientCard({ setup, onChanged }: { setup: ClientSetup; onChanged: () =>
         <h2>{setup.name}</h2>
         <Badge tone={tone}>{label}</Badge>
       </div>
-      <p>{setup.instructions}</p>
+      <p>{tidy(setup.instructions)}</p>
       <Snippet text={setup.snippet} />
       {canInstall && (
         <div className="actions">
           <button className="btn primary" disabled={busy} onClick={() => void install()}>
             Add Sakshi to {setup.name}
           </button>
-          <span className="muted small">Edits {setup.config_path} after backing it up.</span>
+          <span className="muted small">
+            Edits {tidy(setup.config_path)} after backing it up.
+          </span>
         </div>
       )}
       {message && <Notice tone="ok">{message}</Notice>}

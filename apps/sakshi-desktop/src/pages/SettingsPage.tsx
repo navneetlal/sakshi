@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { api, errorText, type Check, type SetupCheck, type Settings } from "../api";
 import { ErrorNotice, Toggle, languageLabel } from "../components";
+import { tidy } from "../paths";
 import {
   PALETTES,
   applyTheme,
@@ -124,7 +125,8 @@ export function SettingsPage() {
       <section className="card">
         <h2>Storage</h2>
         <p>
-          Meetings, models, and the index live in <span className="mono">{settings.data_dir}</span>
+          Meetings, models, and the index live in{" "}
+          <span className="mono">{tidy(settings.data_dir)}</span>
           . Each meeting is a folder you can open, copy, or delete.
         </p>
         <button className="btn" onClick={() => void api.revealDataDir()}>
@@ -223,7 +225,7 @@ function CheckRow({ name, check }: { name: string; check: Check }) {
         </span>
         {name}
       </dt>
-      <dd className={check.ok ? "muted mono small" : "error-text"}>{check.detail}</dd>
+      <dd className={check.ok ? "muted mono small" : "error-text"}>{tidy(check.detail)}</dd>
     </>
   );
 }
