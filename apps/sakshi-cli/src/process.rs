@@ -13,37 +13,53 @@ use sakshi_store::Store;
 pub struct ProcessArgs {
     /// Meeting folder containing system.wav and/or mic.wav, and optionally
     /// recording.mp4.
-    folder: PathBuf,
+    pub(crate) folder: PathBuf,
 
     /// Transcription language: `auto` or a code such as `hi` or `en-US`.
     /// Overrides meeting.json and the global setting.
     #[arg(long)]
-    language: Option<Language>,
+    pub(crate) language: Option<Language>,
 
     /// Run this stage again, and every stage that depends on it.
     #[arg(long, value_name = "STAGE")]
-    from: Option<Stage>,
+    pub(crate) from: Option<Stage>,
 
     /// Run every stage again.
     #[arg(long)]
-    force: bool,
+    pub(crate) force: bool,
 
     /// Inference device: auto, cpu, metal, cuda[:N], or vulkan[:N].
     #[arg(long, default_value = "auto")]
-    device: String,
+    pub(crate) device: String,
 
     /// ASR model id (see `models list`). Defaults to the bundled default.
     #[arg(long, value_name = "ID")]
-    asr_model: Option<String>,
+    pub(crate) asr_model: Option<String>,
 
     /// Diarization model id. Defaults to the bundled default.
     #[arg(long, value_name = "ID")]
-    diar_model: Option<String>,
+    pub(crate) diar_model: Option<String>,
 
     /// Share of a mic segment's words that must match overlapping system
     /// speech for it to be dropped as bleed (0 to 1).
     #[arg(long, value_name = "FRACTION")]
-    bleed_threshold: Option<f32>,
+    pub(crate) bleed_threshold: Option<f32>,
+}
+
+impl ProcessArgs {
+    /// Default settings for one folder.
+    pub(crate) fn for_folder(folder: PathBuf) -> Self {
+        Self {
+            folder,
+            language: None,
+            from: None,
+            force: false,
+            device: "auto".into(),
+            asr_model: None,
+            diar_model: None,
+            bleed_threshold: None,
+        }
+    }
 }
 
 pub fn run(data: &DataDir, args: ProcessArgs) -> anyhow::Result<()> {
@@ -51,6 +67,11 @@ pub fn run(data: &DataDir, args: ProcessArgs) -> anyhow::Result<()> {
         bail!("{} is not a folder", args.folder.display());
     }
     let meeting = MeetingDir::new(&args.folder);
+    if sakshi_capture::needs_finalize(&meeting) {
+        // A recording that never finished, e.g. after a crash.
+        println!("finishing the interrupted recording first");
+        sakshi_capture::finalize(&meeting, &Ffmpeg::locate()?, false)?;
+    }
     let language = resolve_language(data, &meeting, args.language)?;
 
     let store = ModelStore::open(data)?;
@@ -172,6 +193,7 @@ mod tests {
             &data.config_path(),
             &Settings {
                 language: code("en"),
+                ..Settings::default()
             },
         )
         .unwrap();

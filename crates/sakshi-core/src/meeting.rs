@@ -18,11 +18,22 @@ pub struct MeetingInfo {
 }
 
 /// Global settings, stored as `config.json` in the data directory.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// Default transcription language for every meeting.
     pub language: Language,
+    /// Remind the user to tell participants before each recording.
+    pub consent_reminder: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            language: Language::Auto,
+            consent_reminder: true,
+        }
+    }
 }
 
 /// A summary written by an MCP client and saved through Sakshi. Sakshi
@@ -60,6 +71,10 @@ mod tests {
         assert_eq!(info, MeetingInfo::default());
         let settings: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(settings.language, Language::Auto);
+        assert!(settings.consent_reminder, "on unless turned off");
+        let settings: Settings =
+            serde_json::from_str(r#"{"language": "hi", "consent_reminder": false}"#).unwrap();
+        assert!(!settings.consent_reminder);
     }
 
     #[test]

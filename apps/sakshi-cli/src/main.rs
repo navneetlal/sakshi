@@ -2,6 +2,7 @@ mod config;
 mod meetings;
 mod models;
 mod process;
+mod record;
 
 use std::path::PathBuf;
 
@@ -24,6 +25,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Record a call (a window or display, its audio, and your microphone),
+    /// then process it.
+    Record(record::RecordArgs),
     /// Transcribe, diarize, and extract key frames from a meeting folder.
     Process(process::ProcessArgs),
     /// List processed meetings.
@@ -48,6 +52,7 @@ fn main() -> anyhow::Result<()> {
         None => DataDir::from_env_or_default()?,
     };
     match cli.command {
+        Command::Record(args) => record::run(&data, args),
         Command::Process(args) => process::run(&data, args),
         Command::Meetings(cmd) => meetings::run(&data, cmd),
         Command::Models(cmd) => models::run(&data, cmd),

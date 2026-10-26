@@ -324,3 +324,65 @@ considered. Newest entries go at the bottom.
   them. After the change it reports none.
 - **Alternatives:** `anyOf` branches (still awkward for OpenAPI 3.0-style
   dialects); leaving them (fine for Claude, riskier for other clients).
+
+## D19. macOS capture through objc2 bindings; unsafe only there
+
+- **Decision:** the macOS backend calls ScreenCaptureKit, AVFAudio,
+  CoreMedia, CoreVideo, and CoreGraphics through the generated `objc2-*`
+  crates (0.3.x; MIT/Apache/zlib, no build scripts). `unsafe_code` is denied
+  across the workspace and allowed only in `sakshi-capture/src/macos/`.
+- **Why:** `screencapturekit` 11.x compiles a Swift bridge at build time,
+  which needs the Swift toolchain and SDK detection on every build machine.
+  The objc2 crates are plain Rust, and the FFI stays in one reviewable
+  module.
+- **Alternatives:** `screencapturekit` (higher level; Swift build); writing
+  `extern` declarations by hand.
+
+## D20. How a recording is captured
+
+- **Decision:**
+  - **Clock:** one session clock, the host clock (`mach_absolute_time` in
+    seconds). ScreenCaptureKit stamps buffers with it, and the microphone's
+    `AVAudioTime.hostTime` converts to it.
+  - **Audio:** each track is written at its own rate (48 kHz mono for app
+    audio, the device rate for the mic). Each buffer is placed at its time:
+    late starts and dropouts become silence and overlap is dropped, so
+    sample *n* is *n / rate* seconds into the session.
+  - **Video:** a ticker writes exactly one frame per tick (default 15 fps,
+    the newest frame, or black before the first one) to ffmpeg
+    (`h264_videotoolbox`) as raw BGRA. Video is therefore constant-rate and
+    starts at the session start, like the audio. ScreenCaptureKit scales
+    the window to fit 1280x720.
+  - **Crash safety:** everything goes to `<meeting>/capture/`. Video is
+    fragmented MP4, and the WAV headers are refreshed every second. A
+    `capture.json` is written before the first frame.
+  - **Finalize:** produces `recording.mp4` (video copied, both tracks mixed
+    to AAC) and 16 kHz mono `mic.wav`/`system.wav`, then deletes the raw
+    files. `process` finalizes a capture left behind by a crash.
+  - **Audio sources:** a window filter captures that window's app audio and
+    excludes Sakshi's own. The microphone comes from AVAudioEngine, which
+    works on macOS 14.
+  - **Location:** recordings go in `<data>/meetings/<uuid>/`.
+- **Why:** ScreenCaptureKit sends frames only when the screen changes, so
+  without the ticker the video's timeline would drift from the audio's. The
+  spec targets macOS 14+, and ScreenCaptureKit's own microphone capture
+  needs macOS 15.
+- **Alternatives:** ScreenCaptureKit microphone capture (simpler, 15+);
+  AVAssetWriter or `SCRecordingOutput` instead of ffmpeg (the spec fixes
+  ffmpeg); variable-frame-rate video with per-frame timestamps; segment
+  files instead of fragmented MP4.
+
+## D21. Recording permissions and the consent reminder
+
+- **Decision:** `record` checks Screen Recording (and Microphone, unless
+  `--no-mic`) before doing anything. On a first run it triggers the system
+  prompt; otherwise it explains exactly which System Settings page to open
+  and how. Before each recording it reminds the user to tell participants;
+  answering "always", or `config consent-reminder off`, turns that off. The
+  setting is stored in `config.json`. Non-interactive runs must pass `--yes`.
+- **Why:** for a command-line tool macOS grants access to the app that
+  launched it (Terminal, iTerm, ...), which is not obvious, so the messages
+  name it. The reminder is the spec's privacy requirement; `--yes` keeps
+  scripted use possible without silently skipping it.
+- **Alternatives:** a reminder that can't be turned off; asking for
+  permissions only when a capture fails.

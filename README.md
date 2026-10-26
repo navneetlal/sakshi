@@ -23,7 +23,7 @@ through Sakshi's `save_summary` tool.
 | M0 | Workspace, CI, docs | done |
 | M1 | `sakshi-cli process <folder>` on existing recordings | done |
 | M2 | SQLite store and MCP server | done |
-| M3 | macOS capture | next |
+| M3 | macOS capture (`sakshi-cli record`) | in progress |
 | M4 | Desktop app (Tauri 2) | planned |
 | M5 / M6 | Windows / Linux capture | planned |
 
@@ -52,6 +52,34 @@ Models, settings, and the meeting index (`sakshi.db`) live in the data
 directory: `Sakshi/` under your platform's application data folder, or
 `$SAKSHI_DATA_DIR`, or `--data-dir`. Meeting folders stay where they are;
 the index points at them.
+
+### Recording a call (macOS 14+)
+
+```bash
+sakshi-cli record --list                 # windows and displays; likely meetings marked *
+sakshi-cli record                        # pick one interactively
+sakshi-cli record --app zoom             # or --window <id> / --display <id>
+```
+
+Sakshi records the window's video (scaled to fit 1280x720, 15 fps), that
+app's audio (the `system` track: everyone else), and your microphone (the
+`mic` track: "You"). Press Ctrl-C to stop. The recording is then
+transcribed and indexed, and lands in `<data>/meetings/<id>/`. Useful flags:
+`--no-mic`, `--no-system-audio`, `--fps`, `--max-size 1920x1080`,
+`--duration <s>`, `--no-process`, `--title`.
+
+Before each recording Sakshi reminds you to tell participants they're being
+recorded. Answer `a` to stop the reminder, or run `sakshi-cli config
+consent-reminder off`.
+
+macOS asks for **Screen Recording** and **Microphone** access the first
+time. For a command-line tool the permission belongs to the app you run it
+from (Terminal, iTerm, ...). Turn it on in System Settings > Privacy &
+Security, then quit and reopen that app.
+
+If Sakshi is interrupted mid-recording, the capture files stay readable;
+`sakshi-cli process <meeting folder>` finishes the recording and processes
+it.
 
 ### A meeting folder
 
@@ -91,6 +119,8 @@ sakshi-cli models pull [<id>...] [--yes]
 sakshi-cli models add <owner/repo> <file.gguf> [--revision <rev>] [--yes]
 sakshi-cli config show
 sakshi-cli config language <auto|code> [--meeting <folder>]
+sakshi-cli config consent-reminder <on|off>
+sakshi-cli record [--list] [--window <id> | --display <id> | --app <text>] [...]
 ```
 
 The language defaults to automatic detection. A code you pin is checked
@@ -186,7 +216,7 @@ Hindi clip from FLEURS, both CC BY 4.0. See
 
 ## Planned
 
-- macOS capture (M3), desktop app with an MCP setup helper (M4), then
+- Desktop app with a window picker and an MCP setup helper (M4), then
   Windows and Linux capture.
 - **Converting NeMo checkpoints to GGUF**, so `.nemo` fine-tunes from Hugging
   Face can be added as custom models. Today only ready-made GGUF files are

@@ -19,14 +19,42 @@ pub enum ConfigCommand {
         #[arg(long, value_name = "FOLDER")]
         meeting: Option<PathBuf>,
     },
+    /// Turn the "let participants know" reminder before recording on or off.
+    ConsentReminder { state: OnOff },
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum OnOff {
+    On,
+    Off,
 }
 
 pub fn run(data: &DataDir, cmd: ConfigCommand) -> anyhow::Result<()> {
     match cmd {
         ConfigCommand::Show => {
             let settings = load_settings(data)?;
-            println!("data directory: {}", data.root().display());
-            println!("language:       {}", settings.language);
+            println!("data directory:   {}", data.root().display());
+            println!("language:         {}", settings.language);
+            let reminder = if settings.consent_reminder {
+                "on"
+            } else {
+                "off"
+            };
+            println!("consent reminder: {reminder}");
+            Ok(())
+        }
+        ConfigCommand::ConsentReminder { state } => {
+            let mut settings = load_settings(data)?;
+            settings.consent_reminder = matches!(state, OnOff::On);
+            write_json_atomic(&data.config_path(), &settings)?;
+            println!(
+                "consent reminder {}",
+                if settings.consent_reminder {
+                    "on"
+                } else {
+                    "off"
+                }
+            );
             Ok(())
         }
         ConfigCommand::Language { language, meeting } => {
