@@ -7,6 +7,7 @@ use sakshi_core::{DataDir, Language, MeetingDir, MeetingInfo, Settings, read_jso
 use sakshi_media::Ffmpeg;
 use sakshi_models::{ModelStore, Role};
 use sakshi_pipeline::{BleedConfig, Pipeline, PipelineConfig, RunOptions, Stage};
+use sakshi_store::Store;
 
 #[derive(Debug, Args)]
 pub struct ProcessArgs {
@@ -117,6 +118,10 @@ pub fn run(data: &DataDir, args: ProcessArgs) -> anyhow::Result<()> {
         }
     );
     println!("transcript: {}", meeting.transcript_json().display());
+
+    // Make the meeting visible to the MCP server.
+    let record = Store::open(&data.db_path())?.index_meeting(&meeting)?;
+    println!("meeting id: {}", record.id);
     Ok(())
 }
 

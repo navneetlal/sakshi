@@ -2250,6 +2250,7 @@ dependencies = [
  "sakshi-media",
  "sakshi-models",
  "sakshi-pipeline",
+ "sakshi-store",
  "tempfile",
  "tracing",
  "tracing-subscriber",

@@ -16,6 +16,7 @@ sakshi-core.workspace = true
 sakshi-media.workspace = true
 sakshi-models.workspace = true
 sakshi-pipeline.workspace = true
+sakshi-store.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

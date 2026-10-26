@@ -1,4 +1,5 @@
 mod config;
+mod meetings;
 mod models;
 mod process;
 
@@ -25,6 +26,9 @@ struct Cli {
 enum Command {
     /// Transcribe, diarize, and extract key frames from a meeting folder.
     Process(process::ProcessArgs),
+    /// List processed meetings.
+    #[command(subcommand)]
+    Meetings(meetings::MeetingsCommand),
     /// List, download, or add models.
     #[command(subcommand)]
     Models(models::ModelsCommand),
@@ -45,6 +49,7 @@ fn main() -> anyhow::Result<()> {
     };
     match cli.command {
         Command::Process(args) => process::run(&data, args),
+        Command::Meetings(cmd) => meetings::run(&data, cmd),
         Command::Models(cmd) => models::run(&data, cmd),
         Command::Config(cmd) => config::run(&data, cmd),
     }

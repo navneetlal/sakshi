@@ -7,10 +7,12 @@
 //! ```
 //!
 //! and ffmpeg on PATH. Run with `cargo test -p sakshi-cli -- --ignored`.
-//! `SAKSHI_DATA_DIR` overrides where the models are looked up.
+//! `SAKSHI_DATA_DIR` overrides where the downloaded models are found. Each
+//! test gets its own data directory (and so its own database) sharing those
+//! models.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 use sakshi_core::{Frame, Speaker, Track, Transcript, read_json};
 
@@ -18,38 +20,60 @@ fn workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn data_dir() -> PathBuf {
-    std::env::var_os("SAKSHI_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| workspace().join("target/dev-data"))
+/// A fresh data directory and a copy of a fixture meeting.
+struct Run {
+    data: tempfile::TempDir,
+    meeting: tempfile::TempDir,
 }
 
-/// Copies a fixture into a fresh temporary meeting folder.
-fn meeting(fixture: &str) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    for entry in std::fs::read_dir(workspace().join("fixtures").join(fixture)).unwrap() {
-        let path = entry.unwrap().path();
-        std::fs::copy(&path, dir.path().join(path.file_name().unwrap())).unwrap();
+impl Run {
+    fn new(fixture: &str) -> Self {
+        let data = tempfile::tempdir().unwrap();
+        let models = std::env::var_os("SAKSHI_DATA_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| workspace().join("target/dev-data"))
+            .join("models");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&models, data.path().join("models")).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&models, data.path().join("models")).unwrap();
+
+        let meeting = tempfile::tempdir().unwrap();
+        for entry in std::fs::read_dir(workspace().join("fixtures").join(fixture)).unwrap() {
+            let path = entry.unwrap().path();
+            std::fs::copy(&path, meeting.path().join(path.file_name().unwrap())).unwrap();
+        }
+        Self { data, meeting }
     }
-    dir
-}
 
-fn process(folder: &Path, extra: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_sakshi-cli"))
-        .arg("--data-dir")
-        .arg(data_dir())
-        .arg("process")
-        .arg(folder)
-        .args(extra)
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    assert!(
-        out.status.success(),
-        "sakshi-cli failed:\n{stdout}\n{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    stdout
+    fn dir(&self) -> &Path {
+        self.meeting.path()
+    }
+
+    fn cli(&self, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_sakshi-cli"))
+            .arg("--data-dir")
+            .arg(self.data.path())
+            .args(args)
+            .output()
+            .unwrap()
+    }
+
+    fn process(&self, extra: &[&str]) -> String {
+        let folder = self.dir().to_str().unwrap();
+        let out = self.cli(&[&["process", folder], extra].concat());
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        assert!(
+            out.status.success(),
+            "sakshi-cli failed:\n{stdout}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        stdout
+    }
+
+    fn transcript(&self) -> Transcript {
+        read_json(&self.dir().join("transcript.json")).unwrap()
+    }
 }
 
 fn speaker_saying(t: &Transcript, phrase: &str) -> Speaker {
@@ -63,11 +87,11 @@ fn speaker_saying(t: &Transcript, phrase: &str) -> Speaker {
 #[test]
 #[ignore = "needs the nemo-speech sidecar, downloaded models, and ffmpeg"]
 fn english_meeting_end_to_end() {
-    let dir = meeting("ami-en2002d");
+    let run = Run::new("ami-en2002d");
 
-    let stdout = process(dir.path(), &[]);
+    let stdout = run.process(&[]);
 
-    let t: Transcript = read_json(&dir.path().join("transcript.json")).unwrap();
+    let t = run.transcript();
     let remote: std::collections::BTreeSet<Speaker> = t
         .segments
         .iter()
@@ -115,25 +139,35 @@ fn english_meeting_end_to_end() {
             .all(|p| p[0].start_ms <= p[1].start_ms)
     );
 
-    let frames: Vec<Frame> = read_json(&dir.path().join("frames.json")).unwrap();
+    let frames: Vec<Frame> = read_json(&run.dir().join("frames.json")).unwrap();
     let times: Vec<u64> = frames.iter().map(|f| f.at_ms).collect();
     assert_eq!(times, [0, 20_000, 40_000]);
-    assert!(dir.path().join("frames/20000.jpg").is_file());
+    assert!(run.dir().join("frames/20000.jpg").is_file());
     assert!(stdout.contains("key frames: 3"), "{stdout}");
 
-    // A second run reuses every stage.
-    let again = process(dir.path(), &[]);
+    // The meeting is indexed for the MCP server.
+    let id = stdout
+        .lines()
+        .find_map(|l| l.strip_prefix("meeting id: "))
+        .expect("process prints the meeting id")
+        .to_owned();
+    let listed = run.cli(&["meetings", "list", "--query", "thursday"]);
+    assert!(String::from_utf8_lossy(&listed.stdout).contains(&id));
+
+    // A second run reuses every stage and keeps the id.
+    let again = run.process(&[]);
     assert!(again.contains("ran:        none"), "{again}");
+    assert!(again.contains(&format!("meeting id: {id}")), "{again}");
 }
 
 #[test]
 #[ignore = "needs the nemo-speech sidecar, downloaded models, and ffmpeg"]
 fn hindi_meeting_auto_detects_and_separates_speakers() {
-    let dir = meeting("fleurs-hi");
+    let run = Run::new("fleurs-hi");
 
-    process(dir.path(), &[]);
+    run.process(&[]);
 
-    let t: Transcript = read_json(&dir.path().join("transcript.json")).unwrap();
+    let t = run.transcript();
     assert_eq!(t.segments.len(), 2, "{:#?}", t.segments);
     assert_eq!(t.segments[0].speaker, Speaker::Remote(1));
     assert_eq!(t.segments[1].speaker, Speaker::Remote(2));
@@ -156,9 +190,9 @@ fn hindi_meeting_auto_detects_and_separates_speakers() {
     );
 
     // Pinning the language redoes transcription and records the pin.
-    let stdout = process(dir.path(), &["--language", "hi"]);
+    let stdout = run.process(&["--language", "hi"]);
     assert!(stdout.contains("transcribe-system"), "{stdout}");
-    let t: Transcript = read_json(&dir.path().join("transcript.json")).unwrap();
+    let t = run.transcript();
     assert_eq!(t.languages, ["hi"]);
     assert!(t.segments[0].text.contains("मंगलवार"));
 }
@@ -166,15 +200,10 @@ fn hindi_meeting_auto_detects_and_separates_speakers() {
 #[test]
 #[ignore = "needs the nemo-speech sidecar and downloaded models"]
 fn unsupported_language_fails_before_transcribing() {
-    let dir = meeting("fleurs-hi");
-    let out = Command::new(env!("CARGO_BIN_EXE_sakshi-cli"))
-        .arg("--data-dir")
-        .arg(data_dir())
-        .arg("process")
-        .arg(dir.path())
-        .args(["--language", "xx"])
-        .output()
-        .unwrap();
+    let run = Run::new("fleurs-hi");
+    let folder = run.dir().to_str().unwrap();
+
+    let out = run.cli(&["process", folder, "--language", "xx"]);
 
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -182,5 +211,5 @@ fn unsupported_language_fails_before_transcribing() {
         stderr.contains("does not support language \"xx\""),
         "{stderr}"
     );
-    assert!(!dir.path().join("work/system.engine.json").exists());
+    assert!(!run.dir().join("work/system.engine.json").exists());
 }
