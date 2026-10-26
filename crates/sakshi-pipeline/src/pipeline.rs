@@ -122,7 +122,9 @@ impl<'a> Pipeline<'a> {
     fn key(&self, stage: Stage) -> String {
         let c = &self.config;
         match stage {
-            Stage::PrepareAudio | Stage::Save => "v1".into(),
+            Stage::PrepareAudio => "v1".into(),
+            // v2: transcript.json gained duration_ms.
+            Stage::Save => "v2".into(),
             Stage::TranscribeSystem | Stage::TranscribeMic => {
                 format!("{} language={}", self.transcriber.engine_id(), c.language)
             }
