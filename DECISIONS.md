@@ -193,3 +193,23 @@ considered. Newest entries go at the bottom.
   writing JPEGs from ffmpeg (would need a second pass to know which to keep).
   Development uses the system ffmpeg; release builds will bundle an LGPL
   build (M4).
+
+## D12. Mic-bleed removal works on segments and on runs inside them
+
+- **Decision:** a mic segment is compared, as normalized tokens, with the
+  system words within ±2 s of it, using a longest common subsequence.
+  - If at least 70% of its tokens match in order, the whole segment is
+    dropped (the spec's rule).
+  - Otherwise, any run of 4 or more consecutive matched tokens (one
+    unmatched token allowed between matches) is cut out, and the rest of
+    the segment is kept as the user's speech.
+  - Segments under 2 tokens are never touched.
+  - Removed pieces go to `work/bleed-removed.json` with their similarity.
+  - All four values live in `BleedConfig`; the CLI exposes the threshold.
+- **Why:** on the AMI fixture, the user started talking less than 1 s
+  after an echo ended, so the echo and the reply formed one segment that
+  scored 0.68 and stayed duplicated. Cutting matching runs fixed both such
+  cases without touching the user's own words.
+- **Alternatives:** segment-level only (misses mixed segments); dropping
+  every matched word (a user repeating a word the remote just said would
+  lose it); acoustic echo cancellation during capture (M3+, complementary).

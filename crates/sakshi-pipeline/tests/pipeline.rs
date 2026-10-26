@@ -209,10 +209,11 @@ fn changed_settings_redo_only_the_affected_stages() {
         .run(&meeting, &RunOptions::default())
         .unwrap();
 
-    // A threshold no segment can reach keeps the bleed.
+    // Thresholds nothing can reach keep the bleed.
     let config = PipelineConfig {
         bleed: BleedConfig {
             threshold: 1.1,
+            min_run_words: usize::MAX,
             ..BleedConfig::default()
         },
         ..PipelineConfig::default()

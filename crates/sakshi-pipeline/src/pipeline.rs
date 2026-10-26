@@ -127,10 +127,8 @@ impl<'a> Pipeline<'a> {
                 format!("{} language={}", self.transcriber.engine_id(), c.language)
             }
             Stage::Segments => format!("gap_ms={}", c.segment_gap_ms),
-            Stage::RemoveBleed => format!(
-                "threshold={} window_ms={} min_words={}",
-                c.bleed.threshold, c.bleed.window_ms, c.bleed.min_words
-            ),
+            // Debug output lists every field, so new settings are covered.
+            Stage::RemoveBleed => format!("{:?}", c.bleed),
             Stage::Keyframes => format!("{:?}", c.keyframes),
         }
     }
