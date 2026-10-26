@@ -2,8 +2,11 @@
 //! the app; it only prepares a development checkout.
 
 mod fixtures;
+mod icon;
 mod sidecar;
 mod util;
+
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
@@ -30,11 +33,18 @@ enum Command {
     /// Regenerate `fixtures/` from pinned AMI and FLEURS sources (about
     /// 400 MB downloaded once into `target/fixture-sources/`). Needs ffmpeg.
     Fixtures,
+    /// Draw the 1024x1024 app icon that `pnpm tauri icon` turns into every
+    /// platform's icon files.
+    Icon {
+        #[arg(long, default_value = "apps/sakshi-desktop/src-tauri/icons/source.png")]
+        out: PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
         Command::FetchSidecar { variant, force } => sidecar::fetch(variant.as_deref(), force),
         Command::Fixtures => fixtures::generate(),
+        Command::Icon { out } => icon::generate(&out),
     }
 }

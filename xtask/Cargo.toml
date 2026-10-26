@@ -12,6 +12,7 @@ publish.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 hex.workspace = true
+image = { workspace = true, features = ["png"] }
 sakshi-asr.workspace = true
 sha2.workspace = true
 

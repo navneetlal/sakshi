@@ -1,0 +1,39 @@
+[package]
+name = "sakshi-desktop"
+description = "The Sakshi desktop app: record calls, watch them process, browse transcripts, connect MCP clients"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "sakshi"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+sakshi-app.workspace = true
+sakshi-asr.workspace = true
+sakshi-capture.workspace = true
+sakshi-core.workspace = true
+sakshi-media.workspace = true
+sakshi-models.workspace = true
+sakshi-pipeline.workspace = true
+sakshi-store.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri.workspace = true
+tauri-plugin-opener.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
