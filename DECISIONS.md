@@ -171,3 +171,25 @@ considered. Newest entries go at the bottom.
   the detected language (about 3 s extra per track); guessing from the script
   of the text (Devanagari alone doesn't distinguish Hindi from Marathi or
   Nepali).
+
+## D11. Media: ffmpeg for decoding, pure Rust for hashing and JPEG
+
+- **Decision:** audio that is already 16 kHz mono PCM16 or float32 WAV goes
+  to the recognizer as is. Anything else is converted by ffmpeg to 16 kHz mono
+  float32 under `work/`. Key frames: ffmpeg samples the video once a second
+  and downscales to at most 1280 px wide, piping frames as PPM. A 64-bit DCT
+  perceptual hash (`image_hasher`) is computed for each. A frame is kept when
+  it differs from the last kept frame by at least 10 bits, no sooner than 2 s
+  after it, and at least every 45 s regardless. Kept frames are written as
+  JPEG quality 80 with the `image` crate. All of these values live in
+  `KeyframeConfig`.
+- **Why:** nemo-speech reads PCM16 and float32 directly, so re-encoding a
+  ready file only costs disk. Decoding stays in ffmpeg (any codec), while
+  hashing and JPEG encoding are pure Rust. The 2 s minimum keeps slide
+  transitions and animations from producing bursts of frames, and a
+  suppressed change is still caught at the next sample.
+- **Alternatives:** always re-encoding to float32; ffmpeg's scene-detection
+  filter (scores consecutive frames, not frames against the last kept one);
+  writing JPEGs from ffmpeg (would need a second pass to know which to keep).
+  Development uses the system ffmpeg; release builds will bundle an LGPL
+  build (M4).
