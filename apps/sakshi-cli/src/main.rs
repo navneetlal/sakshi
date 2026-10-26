@@ -1,4 +1,6 @@
+mod config;
 mod models;
+mod process;
 
 use std::path::PathBuf;
 
@@ -21,9 +23,14 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Transcribe, diarize, and extract key frames from a meeting folder.
+    Process(process::ProcessArgs),
     /// List, download, or add models.
     #[command(subcommand)]
     Models(models::ModelsCommand),
+    /// Show or change settings.
+    #[command(subcommand)]
+    Config(config::ConfigCommand),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -37,6 +44,8 @@ fn main() -> anyhow::Result<()> {
         None => DataDir::from_env_or_default()?,
     };
     match cli.command {
+        Command::Process(args) => process::run(&data, args),
         Command::Models(cmd) => models::run(&data, cmd),
+        Command::Config(cmd) => config::run(&data, cmd),
     }
 }

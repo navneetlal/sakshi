@@ -2074,8 +2074,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "sakshi-asr",
  "sakshi-core",
+ "sakshi-media",
  "sakshi-models",
+ "sakshi-pipeline",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]
