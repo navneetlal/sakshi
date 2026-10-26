@@ -2,6 +2,15 @@ import { useEffect, useState } from "react";
 
 import { api, errorText, type Check, type SetupCheck, type Settings } from "../api";
 import { ErrorNotice, Toggle, languageLabel } from "../components";
+import {
+  PALETTES,
+  applyTheme,
+  loadTheme,
+  resolveScheme,
+  saveTheme,
+  type Mode,
+  type ThemeChoice,
+} from "../theme";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -100,6 +109,8 @@ export function SettingsPage() {
         </p>
       </section>
 
+      <Appearance />
+
       <section className="card">
         <h2>Recording</h2>
         <Toggle
@@ -141,6 +152,65 @@ export function SettingsPage() {
         </p>
       </section>
     </div>
+  );
+}
+
+const modes: { id: Mode; label: string }[] = [
+  { id: "system", label: "System" },
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+];
+
+/** Palette and light/dark choice, remembered on this Mac. */
+function Appearance() {
+  const [choice, setChoice] = useState<ThemeChoice>(loadTheme);
+  const change = (next: ThemeChoice) => {
+    setChoice(next);
+    saveTheme(next);
+    applyTheme(next);
+  };
+  const scheme = resolveScheme(choice.mode);
+
+  return (
+    <section className="card">
+      <h2>Appearance</h2>
+      <div className="palettes" role="radiogroup" aria-label="Colour palette">
+        {PALETTES.map((p) => (
+          <button
+            key={p.id}
+            role="radio"
+            aria-checked={choice.palette === p.id}
+            className={`palette ${choice.palette === p.id ? "selected" : ""}`}
+            onClick={() => change({ ...choice, palette: p.id })}
+          >
+            {/* Each preview carries its own palette and scheme. */}
+            <span className="palette-preview" data-palette={p.id} data-scheme={scheme}>
+              <span className="pv-sidebar" />
+              <span className="pv-main">
+                <span className="pv-line" />
+                <span className="pv-line short" />
+                <span className="pv-button" />
+              </span>
+            </span>
+            <span className="palette-name">{p.name}</span>
+            <span className="muted small">{p.description}</span>
+          </button>
+        ))}
+      </div>
+      <div className="segmented" role="radiogroup" aria-label="Light or dark">
+        {modes.map((m) => (
+          <button
+            key={m.id}
+            role="radio"
+            aria-checked={choice.mode === m.id}
+            className={choice.mode === m.id ? "active" : ""}
+            onClick={() => change({ ...choice, mode: m.id })}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

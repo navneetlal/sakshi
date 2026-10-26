@@ -505,15 +505,32 @@ considered. Newest entries go at the bottom.
 
 ## D27. Desktop UI toolchain and conventions
 
-- **Decision:** React 19, Vite 8, and TypeScript 7 with no UI library. One
-  stylesheet with CSS variables follows the system's light or dark mode.
+- **Decision:** React 19, Vite 8, and TypeScript 7 with no UI library.
   pnpm 12 installs packages; a committed `.npmrc` points at the public
   npm registry, and CI pins the pnpm version. The window's location is
   kept in the URL hash (`#/meetings/<id>`), so a reload returns to the
   same page.
+- **Colours are swappable palettes.** `styles.css` holds layout and type
+  only and reads every colour from a token. The tokens live in `src/theme/`:
+  - `base.css` holds colours shared by every palette (status, recording,
+    speakers);
+  - each file in `palettes/` sets about 16 neutral and accent tokens for
+    light and dark;
+  - `index.ts` lists the palettes and the default, and sets
+    `data-palette` and `data-scheme` on `<html>`.
+
+  Settings > Appearance switches palette and System/Light/Dark live, and
+  remembers the choice in the window's local storage. Three palettes
+  ship: Graphite & Amber (the default, matching the icon), Paper & Ink,
+  and Stone & Sage. Adding one is a new CSS file and one line in
+  `index.ts`. Accent colours used as text have their own token
+  (`--accent-text`), so they stay readable on light backgrounds.
 - **Why:** the UI is five pages of forms, lists, and a video player, which
-  needs no component library. The `.npmrc` keeps a machine's private
-  registry settings out of the build. pnpm 12 couldn't record its own
+  needs no component library. The first palette's navy sidebar and
+  saturated amber felt heavy. The user asked for something calmer, and
+  for palettes that can change without touching the rest of the code.
+  The `.npmrc` keeps a machine's private registry settings out of the
+  build. pnpm 12 couldn't record its own
   version pin in the lockfile here, which made `--frozen-lockfile` fail,
   so the `packageManager` field was dropped.
 - **Alternatives:** a component library; npm; a router library.

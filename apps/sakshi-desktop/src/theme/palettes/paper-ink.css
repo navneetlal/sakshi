@@ -1,0 +1,40 @@
+/* Paper & Ink: neutral paper and charcoal with a muted ink-blue accent.
+   The tokens are listed in graphite-amber.css. */
+
+[data-palette="paper-ink"] {
+  --bg: #f6f6f4;
+  --surface: #fdfdfc;
+  --surface-2: #f0f0ed;
+  --border: #e3e2de;
+  --text: #1d1e20;
+  --muted: #66676b;
+  --accent: #3e5f9e;
+  --accent-ink: #ffffff;
+  --accent-text: #36558f;
+  --accent-soft: #e7ecf5;
+  --sidebar: #f0f0ed;
+  --sidebar-border: #e3e2de;
+  --sidebar-text: #45464a;
+  --sidebar-text-strong: #1d1e20;
+  --sidebar-hover: rgb(0 0 0 / 4%);
+  --sidebar-active: #e4e4e0;
+}
+
+[data-palette="paper-ink"][data-scheme="dark"] {
+  --bg: #151617;
+  --surface: #1c1d1f;
+  --surface-2: #242528;
+  --border: #303236;
+  --text: #e6e6e6;
+  --muted: #9d9fa4;
+  --accent: #8ea9dc;
+  --accent-ink: #10192b;
+  --accent-text: #9cb5e4;
+  --accent-soft: #1f2a3d;
+  --sidebar: #1a1b1d;
+  --sidebar-border: #2a2b2e;
+  --sidebar-text: #c3c4c8;
+  --sidebar-text-strong: #f0f0f1;
+  --sidebar-hover: rgb(255 255 255 / 5%);
+  --sidebar-active: #292a2d;
+}

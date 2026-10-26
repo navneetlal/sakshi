@@ -1,0 +1,47 @@
+/* Graphite & Amber: warm paper and graphite neutrals; the icon's amber is
+   kept for the primary action and the current selection.
+
+   Every palette defines these tokens, for light and for dark:
+     --bg --surface --surface-2 --border --text --muted
+     --accent (fills) --accent-ink (text on fills) --accent-text (accent
+       as text, readable on --surface) --accent-soft (tinted backgrounds)
+     --sidebar --sidebar-border --sidebar-text --sidebar-text-strong
+       --sidebar-hover --sidebar-active */
+
+[data-palette="graphite-amber"] {
+  --bg: #f7f6f3;
+  --surface: #fdfcfa;
+  --surface-2: #f1efeb;
+  --border: #e5e2dc;
+  --text: #1f1e1c;
+  --muted: #6b675f;
+  --accent: #d8a03c;
+  --accent-ink: #20170a;
+  --accent-text: #9a6512;
+  --accent-soft: #f7ecd8;
+  --sidebar: #f1efeb;
+  --sidebar-border: #e5e2dc;
+  --sidebar-text: #4a4741;
+  --sidebar-text-strong: #1f1e1c;
+  --sidebar-hover: rgb(0 0 0 / 4%);
+  --sidebar-active: #e6e3dd;
+}
+
+[data-palette="graphite-amber"][data-scheme="dark"] {
+  --bg: #161615;
+  --surface: #1d1c1b;
+  --surface-2: #252422;
+  --border: #312f2c;
+  --text: #e8e5df;
+  --muted: #a29e96;
+  --accent: #e0aa4a;
+  --accent-ink: #1d1505;
+  --accent-text: #e6b65e;
+  --accent-soft: #372e1f;
+  --sidebar: #1a1918;
+  --sidebar-border: #2a2826;
+  --sidebar-text: #c6c2bb;
+  --sidebar-text-strong: #f2efe9;
+  --sidebar-hover: rgb(255 255 255 / 5%);
+  --sidebar-active: #2a2826;
+}

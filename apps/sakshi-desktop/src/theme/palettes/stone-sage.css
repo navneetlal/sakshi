@@ -1,0 +1,40 @@
+/* Stone & Sage: soft stone neutrals with a quiet sage-green accent.
+   The tokens are listed in graphite-amber.css. */
+
+[data-palette="stone-sage"] {
+  --bg: #f5f5f1;
+  --surface: #fcfcf9;
+  --surface-2: #eeeee8;
+  --border: #e0e0d8;
+  --text: #1e211e;
+  --muted: #646a63;
+  --accent: #4f7d60;
+  --accent-ink: #ffffff;
+  --accent-text: #44704f;
+  --accent-soft: #e3eee6;
+  --sidebar: #eeeee8;
+  --sidebar-border: #e0e0d8;
+  --sidebar-text: #434843;
+  --sidebar-text-strong: #1e211e;
+  --sidebar-hover: rgb(0 0 0 / 4%);
+  --sidebar-active: #e2e3dc;
+}
+
+[data-palette="stone-sage"][data-scheme="dark"] {
+  --bg: #151715;
+  --surface: #1b1e1b;
+  --surface-2: #232723;
+  --border: #2f342f;
+  --text: #e3e7e2;
+  --muted: #9aa199;
+  --accent: #8cbb9c;
+  --accent-ink: #102016;
+  --accent-text: #9cc8aa;
+  --accent-soft: #1f2d23;
+  --sidebar: #191b19;
+  --sidebar-border: #282c28;
+  --sidebar-text: #c1c6c0;
+  --sidebar-text-strong: #eef1ed;
+  --sidebar-hover: rgb(255 255 255 / 5%);
+  --sidebar-active: #262a26;
+}

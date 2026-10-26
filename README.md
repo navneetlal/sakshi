@@ -77,8 +77,13 @@ pnpm tauri dev          # builds and opens the app; the UI reloads as you edit
 - **Connect:** each AI client's status and setup snippet. Sakshi can add
   itself to Claude Desktop's and Cursor's config files, backing them up
   first.
-- **Settings:** transcription language, the consent reminder, the data
-  folder, and whether ffmpeg, the speech engine, and the models are found.
+- **Settings:** transcription language, appearance (three colour palettes,
+  System/Light/Dark), the consent reminder, the data folder, and whether
+  ffmpeg, the speech engine, and the models are found.
+
+To change the colours, edit or add a palette in
+`apps/sakshi-desktop/src/theme/palettes/` and list it in
+`src/theme/index.ts`. The rest of the UI only uses the palette's tokens.
 
 When run with `pnpm tauri dev`, macOS attributes Screen Recording and
 Microphone access to your terminal app, as with the CLI.

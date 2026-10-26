@@ -1,0 +1,57 @@
+/* Colours every palette shares: status, recording, and speakers. A palette
+   (palettes/*.css) supplies the neutrals and the accent.
+
+   The theme is set on <html> by theme/index.ts:
+     data-palette="<id>"         which palette
+     data-scheme="light|dark"    resolved from the user's choice or the system
+   Any element can carry both attributes to preview another palette. */
+
+:root,
+[data-scheme="light"] {
+  color-scheme: light;
+  --radius: 10px;
+  --ok: #2e7a50;
+  --ok-soft: #e4f1e8;
+  --warn: #8a6214;
+  --warn-soft: #f8efdc;
+  --danger: #b23b3b;
+  --danger-soft: #f8e5e3;
+  --on-danger: #ffffff;
+  --live: #cf3f3f;
+  --live-soft: #f8e2e0;
+  --live-text: #a32f2f;
+  --overlay: rgb(20 18 15 / 40%);
+  --shadow: 0 1px 2px rgb(30 25 15 / 5%);
+  --shadow-raised: 0 18px 48px rgb(0 0 0 / 18%);
+  --media-bg: #000000;
+  --knob: #ffffff;
+  --speaker-0: #3f6fb5;
+  --speaker-1: #8c55a8;
+  --speaker-2: #2c8079;
+  --speaker-3: #b45a35;
+  --speaker-4: #6b7a2a;
+  --speaker-5: #b04a76;
+}
+
+[data-scheme="dark"] {
+  color-scheme: dark;
+  --ok: #7cc49a;
+  --ok-soft: #1c2f24;
+  --warn: #e3bd6a;
+  --warn-soft: #33291a;
+  --danger: #ec8a84;
+  --danger-soft: #3a2120;
+  --on-danger: #ffffff;
+  --live: #f0645c;
+  --live-soft: rgb(240 100 92 / 14%);
+  --live-text: #f5aaa5;
+  --overlay: rgb(0 0 0 / 55%);
+  --shadow: none;
+  --shadow-raised: 0 18px 48px rgb(0 0 0 / 45%);
+  --speaker-0: #8fb0e8;
+  --speaker-1: #c79be0;
+  --speaker-2: #79c7bf;
+  --speaker-3: #e6a084;
+  --speaker-4: #bccb7e;
+  --speaker-5: #e597bb;
+}
