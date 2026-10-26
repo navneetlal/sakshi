@@ -12,7 +12,7 @@ use sakshi_app::mcp_setup::{
 use sakshi_app::{ProcessOptions, check_language, load_settings, save_settings};
 use sakshi_capture::{PermissionState, Source};
 use sakshi_core::{DataDir, Language, MeetingDir, MeetingInfo, Speaker, Summary, Track, read_json};
-use sakshi_media::Ffmpeg;
+use sakshi_media::{Ffmpeg, MIN_FFMPEG};
 use sakshi_models::{ModelStore, Role};
 use sakshi_store::{MeetingQuery, MeetingRecord, Store, TimeRange};
 use serde::{Deserialize, Serialize};
@@ -462,10 +462,22 @@ impl Backend {
             }
             Ok(())
         };
+        // Sakshi doesn't ship FFmpeg, so name the version it found.
+        let ffmpeg = || -> anyhow::Result<String> {
+            let ffmpeg = Ffmpeg::locate()?;
+            let version = ffmpeg.version()?;
+            let found = format!("FFmpeg {} at {}", version.text, ffmpeg.path().display());
+            if !version.is_supported() {
+                let (major, minor) = MIN_FFMPEG;
+                bail!(
+                    "{found} is older than {major}.{minor}, the oldest version Sakshi is \
+                     tested with. Update it, e.g. `brew upgrade ffmpeg`."
+                );
+            }
+            Ok(found)
+        };
         SetupCheck {
-            ffmpeg: Check::from(Ffmpeg::locate().map_err(Into::into), |f| {
-                f.path().display().to_string()
-            }),
+            ffmpeg: Check::from(ffmpeg(), |found| found),
             transcriber: Check::from(sakshi_asr::locate_sidecar().map_err(Into::into), |p| {
                 p.display().to_string()
             }),

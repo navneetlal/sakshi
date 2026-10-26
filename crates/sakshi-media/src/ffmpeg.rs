@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -12,8 +13,64 @@ const BINARY: &str = if cfg!(windows) {
     "ffmpeg"
 };
 
-/// A located `ffmpeg` binary. Release builds will bundle an LGPL build next
-/// to the executable; development uses the one on `PATH`.
+/// Where package managers install ffmpeg. An app started from the Finder
+/// or a desktop launcher doesn't get the shell's `PATH`, so these are
+/// checked as well.
+const INSTALL_DIRS: &[&str] = if cfg!(target_os = "macos") {
+    // Homebrew on Apple Silicon, Homebrew on Intel, MacPorts.
+    &["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
+} else if cfg!(windows) {
+    &[]
+} else {
+    &["/usr/bin", "/usr/local/bin"]
+};
+
+/// The oldest FFmpeg release Sakshi is tested with. Releases back to 4.4
+/// have every option Sakshi uses but aren't tested.
+pub const MIN_FFMPEG: (u32, u32) = (8, 0);
+
+/// What `ffmpeg -version` reports.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FfmpegVersion {
+    /// As printed, e.g. `9.0.2` or `8.0.1-3ubuntu2`.
+    pub text: String,
+    /// Major and minor release; development builds have none.
+    pub release: Option<(u32, u32)>,
+}
+
+impl FfmpegVersion {
+    /// Reads the first line of `ffmpeg -version`, such as
+    /// `ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers`.
+    pub fn parse(first_line: &str) -> Option<Self> {
+        let text = first_line
+            .strip_prefix("ffmpeg version ")?
+            .split_whitespace()
+            .next()?;
+        let numeric: String = text
+            .trim_start_matches('n')
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
+        let mut parts = numeric.split('.').map(str::parse::<u32>);
+        let release = match (parts.next(), parts.next()) {
+            (Some(Ok(major)), Some(Ok(minor))) => Some((major, minor)),
+            (Some(Ok(major)), None) => Some((major, 0)),
+            _ => None,
+        };
+        Some(Self {
+            text: text.to_owned(),
+            release,
+        })
+    }
+
+    /// False only for a release known to be older than [`MIN_FFMPEG`].
+    pub fn is_supported(&self) -> bool {
+        self.release.is_none_or(|release| release >= MIN_FFMPEG)
+    }
+}
+
+/// A located `ffmpeg` binary. Sakshi doesn't ship one: users install
+/// ffmpeg themselves (DECISIONS.md D29).
 #[derive(Debug, Clone)]
 pub struct Ffmpeg {
     path: PathBuf,
@@ -25,30 +82,40 @@ impl Ffmpeg {
     }
 
     /// `$SAKSHI_FFMPEG`, then `ffmpeg` next to the running executable, then
-    /// `PATH`.
+    /// `PATH`, then the usual package manager locations.
     pub fn locate() -> Result<Self, MediaError> {
         if let Some(path) = std::env::var_os(FFMPEG_ENV).filter(|v| !v.is_empty()) {
             return Ok(Self::new(path));
         }
-        let beside_exe = std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|d| d.join(BINARY)))
-            .filter(|p| p.is_file());
-        let on_path = || {
-            std::env::var_os("PATH").and_then(|paths| {
-                std::env::split_paths(&paths)
-                    .map(|dir| dir.join(BINARY))
-                    .find(|p| p.is_file())
-            })
-        };
-        beside_exe
-            .or_else(on_path)
+        let exe = std::env::current_exe().ok();
+        let exe_dir = exe.as_deref().and_then(Path::parent);
+        let installs: Vec<&Path> = INSTALL_DIRS.iter().map(Path::new).collect();
+        find(exe_dir, std::env::var_os("PATH").as_deref(), &installs)
             .map(Self::new)
             .ok_or(MediaError::FfmpegNotFound { env: FFMPEG_ENV })
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn version(&self) -> Result<FfmpegVersion, MediaError> {
+        let out = Command::new(&self.path)
+            .arg("-version")
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|source| MediaError::Spawn {
+                path: self.path.clone(),
+                source,
+            })?;
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        stdout
+            .lines()
+            .next()
+            .and_then(FfmpegVersion::parse)
+            .ok_or_else(|| MediaError::NotFfmpeg {
+                path: self.path.clone(),
+            })
     }
 
     /// A command with Sakshi's standard flags: no prompts, errors only,
@@ -93,6 +160,25 @@ impl Ffmpeg {
     }
 }
 
+/// The first `ffmpeg` next to the executable, on `path_var`, or in
+/// `install_dirs`.
+fn find(
+    exe_dir: Option<&Path>,
+    path_var: Option<&OsStr>,
+    install_dirs: &[&Path],
+) -> Option<PathBuf> {
+    let on_path = path_var
+        .map(|p| std::env::split_paths(p).collect::<Vec<_>>())
+        .unwrap_or_default();
+    exe_dir
+        .into_iter()
+        .map(Path::to_path_buf)
+        .chain(on_path)
+        .chain(install_dirs.iter().map(|d| d.to_path_buf()))
+        .map(|dir| dir.join(BINARY))
+        .find(|p| p.is_file())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -100,6 +186,62 @@ pub(crate) mod tests {
 
     pub(crate) fn ffmpeg() -> Ffmpeg {
         Ffmpeg::locate().expect("tests need ffmpeg on PATH or $SAKSHI_FFMPEG")
+    }
+
+    #[test]
+    fn parses_release_and_distribution_versions() {
+        let parse = |line: &str| FfmpegVersion::parse(line).unwrap();
+        let v = parse("ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers");
+        assert_eq!((v.text.as_str(), v.release), ("9.0.2", Some((9, 0))));
+        assert_eq!(
+            parse("ffmpeg version 8.0.1-3ubuntu2 Copyright").release,
+            Some((8, 0))
+        );
+        assert_eq!(parse("ffmpeg version n7.1 Copyright").release, Some((7, 1)));
+        assert_eq!(
+            parse("ffmpeg version 9.0.2-essentials_build-www.gyan.dev Copyright").release,
+            Some((9, 0))
+        );
+        // Development builds have no release number and aren't rejected.
+        let git = parse("ffmpeg version N-118000-gabcdef Copyright");
+        assert_eq!(git.release, None);
+        assert!(git.is_supported());
+
+        assert!(parse("ffmpeg version 8.0 Copyright").is_supported());
+        assert!(!parse("ffmpeg version 7.1.1 Copyright").is_supported());
+        assert_eq!(FfmpegVersion::parse("avconv version 12"), None);
+    }
+
+    #[test]
+    fn reports_the_installed_version() {
+        let version = ffmpeg().version().unwrap();
+        assert!(!version.text.is_empty());
+    }
+
+    #[test]
+    fn looks_beside_the_app_then_path_then_install_dirs() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = |name: &str| {
+            let d = root.path().join(name);
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        };
+        let (app, on_path, brew, empty) = (dir("app"), dir("path"), dir("brew"), dir("empty"));
+        for d in [&app, &on_path, &brew] {
+            std::fs::write(d.join(BINARY), b"").unwrap();
+        }
+        let path_var = std::env::join_paths([&empty, &on_path]).unwrap();
+        let installs = [brew.as_path()];
+
+        let found = |exe: Option<&Path>, path: Option<&OsStr>| find(exe, path, &installs);
+        assert_eq!(found(Some(&app), Some(&path_var)), Some(app.join(BINARY)));
+        assert_eq!(
+            found(Some(&empty), Some(&path_var)),
+            Some(on_path.join(BINARY))
+        );
+        // An app started from the Finder: no useful PATH.
+        assert_eq!(found(Some(&empty), None), Some(brew.join(BINARY)));
+        assert_eq!(find(Some(&empty), None, &[empty.as_path()]), None);
     }
 
     #[test]

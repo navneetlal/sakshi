@@ -4,9 +4,12 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
     #[error(
-        "ffmpeg not found. Install it (e.g. `brew install ffmpeg`) or set {env} to the binary's path"
+        "ffmpeg not found. Install FFmpeg 8.0 or newer (e.g. `brew install ffmpeg`) or set {env} to the binary's path"
     )]
     FfmpegNotFound { env: &'static str },
+
+    #[error("{} doesn't look like ffmpeg: `-version` printed no version", path.display())]
+    NotFfmpeg { path: PathBuf },
 
     #[error("running {}: {source}", path.display())]
     Spawn { path: PathBuf, source: io::Error },
