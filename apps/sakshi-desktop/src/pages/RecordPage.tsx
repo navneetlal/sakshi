@@ -72,6 +72,24 @@ function Recording() {
           Microphone {recorder.microphone ? "on" : "off"}
         </Badge>
       </div>
+      {recorder.video_paused && (
+        <Notice
+          tone="warn"
+          title="Video paused, audio still recording"
+          actions={
+            <button
+              className="btn"
+              onClick={() => api.showRecordedWindow().catch((e) => setError(errorText(e)))}
+            >
+              Show window
+            </button>
+          }
+        >
+          {recorder.video_paused === "covered"
+            ? `${recorder.app}'s window is behind other windows, so it stopped updating. Leave any part of it showing and video picks up again.`
+            : `${recorder.app}'s window is minimized or on another desktop, so it stopped updating. Bring it back to this desktop and video picks up again.`}
+        </Notice>
+      )}
       <ErrorNotice error={error} />
       <button
         className="btn primary large"
@@ -197,6 +215,13 @@ function Setup() {
             </button>
           </div>
           <SourceList sources={sources} selected={selected} onSelect={setSelected} />
+          {source?.id.kind === "window" && (
+            <p className="muted small">
+              Keep part of this window in view while recording. Every app stops drawing a window
+              that's minimized, and browsers and web-based apps also stop for one that's covered or
+              on another desktop. Sakshi tells you when that happens; audio is recorded either way.
+            </p>
+          )}
         </section>
       )}
 

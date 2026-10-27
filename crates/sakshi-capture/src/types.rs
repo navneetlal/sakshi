@@ -90,6 +90,10 @@ pub struct CaptureStats {
     pub video_frames: u64,
     pub system_samples: u64,
     pub mic_samples: u64,
+    /// Where the recorded window sent no new video because it was out of
+    /// view; the recording holds its last picture there. Audio is complete.
+    #[serde(default)]
+    pub video_pauses: Vec<crate::VideoPause>,
 }
 
 #[derive(Debug, thiserror::Error)]

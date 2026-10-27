@@ -14,8 +14,11 @@ mod content;
 mod mic;
 mod permissions;
 mod stream;
+mod window;
 
-use std::sync::Arc;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
@@ -26,12 +29,15 @@ use sakshi_media::Ffmpeg;
 use crate::finalize::{CaptureManifest, capture_dir, manifest_path};
 use crate::{
     AudioRecorder, AudioTrackWriter, Capture, CaptureConfig, CaptureError, CaptureStats, FrameSlot,
-    PermissionState, Permissions, Recording, Source, SourceId, VideoEncoder, VideoRecorder,
-    fit_within,
+    PauseTracker, PermissionState, Permissions, Recording, Source, SourceId, VideoEncoder,
+    VideoPause, VideoRecorder, WindowView, fit_within,
 };
 
 /// ScreenCaptureKit's audio is requested at this rate, mono.
 const SYSTEM_AUDIO_RATE: u32 = 48_000;
+
+/// How often a recorded window is checked for paused video.
+const WATCH_EVERY: Duration = Duration::from_millis(500);
 
 pub(crate) struct MacCapture;
 
@@ -78,6 +84,71 @@ impl Capture for MacCapture {
         MacRecording::start(source, config, meeting, ffmpeg)
             .map(|r| Box::new(r) as Box<dyn Recording>)
     }
+
+    fn show(&self, source: SourceId) -> Result<(), CaptureError> {
+        match source {
+            SourceId::Window(id) => window::bring_forward(id),
+            SourceId::Display(_) => Ok(()),
+        }
+    }
+}
+
+/// Checks the recorded window every [`WATCH_EVERY`] for video that stopped
+/// because the window is out of view.
+struct Watch {
+    paused: Arc<Mutex<Option<WindowView>>>,
+    stop: mpsc::Sender<()>,
+    thread: JoinHandle<PauseTracker>,
+}
+
+impl Watch {
+    fn start(window_id: u32, frames: Arc<FrameSlot>, started: Instant) -> Self {
+        let paused = Arc::new(Mutex::new(None));
+        let current = Arc::clone(&paused);
+        let (stop, stopped) = mpsc::channel::<()>();
+        let thread = std::thread::Builder::new()
+            .name("sakshi-video-watch".into())
+            .spawn(move || {
+                let mut tracker = PauseTracker::default();
+                while let Err(RecvTimeoutError::Timeout) = stopped.recv_timeout(WATCH_EVERY) {
+                    let view = window::view(window_id);
+                    let now = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+                    let received = frames.received();
+                    tracing::debug!(?view, now, received, "watching the window");
+                    let state = tracker.observe(now, received, view);
+                    let mut current = current.lock().expect("lock");
+                    if *current != state {
+                        match state {
+                            Some(view) => tracing::info!(?view, "video paused: window out of view"),
+                            None => tracing::info!("video resumed"),
+                        }
+                        *current = state;
+                    }
+                }
+                tracker
+            })
+            .expect("spawning the video watch thread");
+        Self {
+            paused,
+            stop,
+            thread,
+        }
+    }
+
+    fn paused(&self) -> Option<WindowView> {
+        *self.paused.lock().expect("lock")
+    }
+
+    fn finish(self, end_ms: u64) -> Vec<VideoPause> {
+        drop(self.stop);
+        match self.thread.join() {
+            Ok(tracker) => tracker.finish(end_ms),
+            Err(_) => {
+                tracing::warn!("the video watch thread panicked; pauses weren't kept");
+                Vec::new()
+            }
+        }
+    }
 }
 
 struct MacRecording {
@@ -85,6 +156,8 @@ struct MacRecording {
     mic: Option<(mic::Microphone, AudioRecorder)>,
     system: Option<AudioRecorder>,
     video: VideoRecorder,
+    /// Only for windows; displays are always in view.
+    watch: Option<Watch>,
     started: Instant,
     manifest: CaptureManifest,
     manifest_path: std::path::PathBuf,
@@ -166,6 +239,10 @@ impl MacRecording {
             _ => None,
         };
         let video = VideoRecorder::start(encoder, Arc::clone(&frames), config.fps, started);
+        let watch = match source_id {
+            SourceId::Window(id) => Some(Watch::start(id, Arc::clone(&frames), started)),
+            SourceId::Display(_) => None,
+        };
         let stream = stream::Stream::start(
             &target,
             width,
@@ -185,6 +262,7 @@ impl MacRecording {
             mic,
             system,
             video,
+            watch,
             started,
             manifest,
             manifest_path: manifest_path(meeting),
@@ -201,12 +279,17 @@ impl Recording for MacRecording {
         self.stream.interruption()
     }
 
+    fn video_paused(&self) -> Option<WindowView> {
+        self.watch.as_ref().and_then(Watch::paused)
+    }
+
     fn stop(self: Box<Self>) -> Result<CaptureStats, CaptureError> {
         let Self {
             stream,
             mic,
             system,
             video,
+            watch,
             started,
             mut manifest,
             manifest_path,
@@ -222,6 +305,7 @@ impl Recording for MacRecording {
             None => 0,
         };
         let system_samples = system.map(AudioRecorder::finish).transpose()?.unwrap_or(0);
+        let video_pauses = watch.map(|w| w.finish(duration_ms)).unwrap_or_default();
         let video_frames = video.stop()?;
         stream_result?;
 
@@ -230,6 +314,7 @@ impl Recording for MacRecording {
             video_frames,
             system_samples,
             mic_samples,
+            video_pauses,
         };
         manifest.stopped_at = Some(Timestamp::now().to_string());
         manifest.stats = Some(stats.clone());

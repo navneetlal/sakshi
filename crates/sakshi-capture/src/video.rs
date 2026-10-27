@@ -10,7 +10,7 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -31,15 +31,22 @@ pub struct VideoFrame {
 #[derive(Default)]
 pub struct FrameSlot {
     latest: Mutex<Option<VideoFrame>>,
+    received: AtomicU64,
 }
 
 impl FrameSlot {
     pub fn put(&self, frame: VideoFrame) {
         *self.latest.lock().expect("frame slot lock") = Some(frame);
+        self.received.fetch_add(1, Ordering::Relaxed);
     }
 
     fn latest(&self) -> Option<VideoFrame> {
         self.latest.lock().expect("frame slot lock").clone()
+    }
+
+    /// Frames put so far. Capture only sends one when the picture changes.
+    pub fn received(&self) -> u64 {
+        self.received.load(Ordering::Relaxed)
     }
 }
 

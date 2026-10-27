@@ -22,6 +22,7 @@ tracing.workspace = true
 block2.workspace = true
 dispatch2.workspace = true
 objc2.workspace = true
+objc2-app-kit = { workspace = true, features = ["std", "libc", "NSRunningApplication"] }
 objc2-avf-audio.workspace = true
 objc2-core-graphics.workspace = true
 objc2-core-media.workspace = true

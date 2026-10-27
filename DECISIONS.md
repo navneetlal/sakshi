@@ -496,9 +496,8 @@ considered. Newest entries go at the bottom.
   not be picked. Found by the user in the first desktop run. Zoom keeps
   its home window ("Zoom Workplace") and others open between calls, and
   those were all being flagged as meetings.
-- **Open:** what a window records while it is minimized or on another
-  desktop hasn't been checked live yet. macOS may deliver no new frames
-  until the window is visible again; audio is unaffected.
+- **Since checked live:** what such a window records depends on the app;
+  see D32.
 - **Alternatives:** on-screen windows only, with a hint to bring the call
   forward.
 
@@ -708,3 +707,70 @@ considered. Newest entries go at the bottom.
     packaging lands (M5).
 - **Alternatives:** keeping red for recording (two signals for one state);
   shipping the centred stacked cut and changing the spec instead.
+
+## D32. Paused window video is detected and surfaced, not prevented
+
+- **Found:** the README's limitation ("minimized or on another desktop may
+  get no new frames") was a guess (D26). The user called it unacceptable,
+  so it was measured on macOS 27 with two test windows, each redrawing a
+  counter at 60 fps and logging its own state, recorded through
+  `sakshi-cli record --window` and checked frame by frame and with
+  ffmpeg's `freezedetect`:
+
+  | The window is…                 | AppKit view   | WKWebView page           |
+  | ------------------------------ | ------------- | ------------------------ |
+  | in view, even a 24 pt strip    | recorded      | recorded                 |
+  | fully covered by other windows | recorded      | stops, or ~1 update/s    |
+  | on another desktop             | recorded      | stops (`hidden`, no rAF) |
+  | full screen, user elsewhere    | recorded      | not tested               |
+  | minimized                      | stops         | stops                    |
+
+  Capture never ended in any of these; it ends only when the window
+  closes. The pixels simply aren't drawn: macOS stops drawing minimized
+  windows (Apple documents that a minimized window's stream pauses), and
+  WebKit stops rendering a page whose window isn't visible. WebKit's
+  behaviour when covered varied between runs: once a full stop, once
+  timers at 1 Hz with `requestAnimationFrame` stopped. Chromium wasn't
+  tested; its design docs describe the same occlusion throttling. Audio
+  was complete in every case, since app audio is captured per app.
+- **Decision:** Sakshi can't make an app draw, so it watches instead.
+  While a window is recorded, a thread checks every 500 ms where the
+  window is, from CoreGraphics' window list: off screen (minimized or on
+  another desktop), fully covered by windows above it (levels 0–19, alpha
+  above 0, by exact rectangle coverage), or in view. It also counts new
+  frames from ScreenCaptureKit, which only sends one when the picture
+  changes. Video is **paused** when the window is out of view and fewer
+  than 3 frames arrived in 2 s, and stays paused until 8 arrive in 2 s or
+  the window is back in view. A live call runs at 15 fps; the throttled
+  page managed about 1, and without the higher bar to resume it flickered
+  between paused and live. A window in view with a still picture is never
+  paused, and nor is a native app that keeps drawing out of view.
+  - The app shows "Video paused, audio still recording" with why and
+    **Show window**, which activates the window's app (macOS switches to
+    its desktop; it allows this only while Sakshi is active, so the
+    command runs synchronously on the main thread right after the click).
+  - A system notification says the same, at most once a minute
+    (`tauri-plugin-notification`, MIT/Apache; its macOS backend builds a
+    316-line Objective-C file).
+  - `sakshi-cli record` prints each pause and resume, and the totals.
+  - The spans are kept in `capture/capture.json` as `stats.video_pauses`
+    (`from_ms`, `to_ms`, and `window`: `covered` or `hidden`).
+  - Before recording, picking a window shows a one-line tip to keep part
+    of it in view.
+- **Verified live** with the CLI: a covered WKWebView page paused once and
+  resumed when uncovered (kept as 13.8–19.4 s; the file froze 11.1–19.5
+  s, so a kept start can lag by a few seconds while a page still trickles
+  frames); a minimized AppKit window paused and resumed (16.4–21.9 s);
+  the AppKit window covered, full screen, and on another desktop raised
+  nothing. The desktop banner and notification are covered by backend
+  tests but weren't seen on screen.
+- **Not done:** MCP clients don't see the pauses yet. They live in
+  `capture.json`, not the index, so a client may read a frozen frame as
+  still on screen through a gap. Indexing them is the next step.
+- **Alternatives:**
+  - A virtual display (private `CGVirtualDisplay`) that keeps the call
+    window always "visible": private API, and the user can't see the call.
+  - Un-minimizing or moving windows through the Accessibility API: one
+    more permission, and it still can't move a window between desktops.
+  - Warning whenever the window is out of view: noise for native apps,
+    which keep drawing.

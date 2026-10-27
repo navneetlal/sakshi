@@ -5,11 +5,11 @@
 
 use std::sync::mpsc::{RecvTimeoutError, channel, sync_channel};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, anyhow, bail};
 use sakshi_app::{ProcessOptions, create_meeting};
-use sakshi_capture::{Capture, CaptureConfig, PermissionState, Recording, SourceId};
+use sakshi_capture::{Capture, CaptureConfig, PermissionState, Recording, SourceId, WindowView};
 use sakshi_core::DataDir;
 use sakshi_media::Ffmpeg;
 use serde::{Deserialize, Serialize};
@@ -20,8 +20,13 @@ use crate::jobs::Jobs;
 /// Makes the platform's capture backend. Called on the recording thread.
 pub type CaptureFactory = dyn Fn() -> Box<dyn Capture> + Send + Sync;
 
-/// How often the recording thread checks whether capture ended by itself.
+/// How often the recording thread checks whether capture ended by itself
+/// or its video paused.
 const POLL: Duration = Duration::from_millis(250);
+
+/// At most one notification about paused video in this long, so a window
+/// going in and out of view doesn't flood the user.
+const ALERT_GAP: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -40,6 +45,11 @@ pub enum RecorderStatus {
         started_at_ms: u64,
         microphone: bool,
         system_audio: bool,
+        /// The app being recorded, for messages ("Zoom").
+        app: String,
+        /// Set while the window's video is paused because it is out of
+        /// view (`covered` or `hidden`). Audio carries on regardless.
+        video_paused: Option<WindowView>,
     },
     Stopping {
         meeting_id: String,
@@ -67,6 +77,8 @@ pub struct Recorder {
 struct State {
     status: RecorderStatus,
     stop: Option<std::sync::mpsc::Sender<()>>,
+    /// What is being recorded.
+    source: Option<SourceId>,
 }
 
 impl Recorder {
@@ -84,6 +96,7 @@ impl Recorder {
             state: Arc::new(Mutex::new(State {
                 status: RecorderStatus::Idle { notice: None },
                 stop: None,
+                source: None,
             })),
         }
     }
@@ -113,6 +126,7 @@ impl Recorder {
         let jobs = Arc::clone(&self.jobs);
         let notify = Arc::clone(&self.notify);
         let state = Arc::clone(&self.state);
+        let source = request.source;
         let spawned = std::thread::Builder::new()
             .name("sakshi-recording".into())
             .spawn(move || {
@@ -129,15 +143,34 @@ impl Recorder {
                     let mut state = state.lock().expect("recorder state");
                     state.status = status.clone();
                     state.stop = Some(stop_tx);
+                    state.source = Some(source);
                 }
                 let _ = ready_tx.send(Ok(status.clone()));
 
+                let app = match &status {
+                    RecorderStatus::Recording { app, .. } => app.clone(),
+                    _ => String::new(),
+                };
+                let mut paused = None;
+                let mut alerted: Option<Instant> = None;
                 let interruption = loop {
                     match stop_rx.recv_timeout(POLL) {
                         Ok(()) | Err(RecvTimeoutError::Disconnected) => break None,
                         Err(RecvTimeoutError::Timeout) => {
                             if let Some(why) = recording.interruption() {
                                 break Some(why);
+                            }
+                            let now_paused = recording.video_paused();
+                            if now_paused != paused {
+                                paused = now_paused;
+                                set_video_paused(&state, notify.as_ref(), paused);
+                                if let Some(view) = paused
+                                    && alerted.is_none_or(|at| at.elapsed() >= ALERT_GAP)
+                                {
+                                    let (title, body) = paused_alert(&app, view);
+                                    notify.alert(&title, &body);
+                                    alerted = Some(Instant::now());
+                                }
                             }
                         }
                     }
@@ -170,6 +203,7 @@ impl Recorder {
                 );
                 let mut guard = state.lock().expect("recorder state");
                 guard.stop = None;
+                guard.source = None;
                 guard.status = RecorderStatus::Idle { notice };
                 let status = guard.status.clone();
                 drop(guard);
@@ -212,6 +246,16 @@ impl Recorder {
         }
     }
 
+    /// Brings the recorded window's app to the front, so its video
+    /// resumes. Only works while Sakshi is the active app, e.g. right after
+    /// a click in it.
+    pub fn show(&self) -> anyhow::Result<()> {
+        let source = self.state.lock().expect("recorder state").source;
+        let source = source.context("Sakshi isn't recording")?;
+        (self.capture)().show(source)?;
+        Ok(())
+    }
+
     fn reset(&self) {
         set_status(
             &self.state,
@@ -224,6 +268,35 @@ impl Recorder {
 fn set_status(state: &Mutex<State>, notify: &dyn Notify, status: RecorderStatus) {
     state.lock().expect("recorder state").status = status.clone();
     notify.notify(AppEvent::Recorder { status });
+}
+
+fn set_video_paused(state: &Mutex<State>, notify: &dyn Notify, paused: Option<WindowView>) {
+    let status = {
+        let mut state = state.lock().expect("recorder state");
+        if let RecorderStatus::Recording { video_paused, .. } = &mut state.status {
+            *video_paused = paused;
+        }
+        state.status.clone()
+    };
+    notify.notify(AppEvent::Recorder { status });
+}
+
+/// The notification's title and body when `app`'s video pauses.
+fn paused_alert(app: &str, view: WindowView) -> (String, String) {
+    let (where_, fix) = match view {
+        WindowView::Covered => (
+            "is behind other windows",
+            "Leave any part of it showing to keep its video.",
+        ),
+        _ => (
+            "is minimized or on another desktop",
+            "Bring it back to this desktop to keep its video.",
+        ),
+    };
+    (
+        "Video paused".into(),
+        format!("{app}'s window {where_}, so it stopped updating. Audio is still recording. {fix}"),
+    )
 }
 
 type Started = (
@@ -268,10 +341,13 @@ fn begin(
         }
     };
     let title = info.title.unwrap_or_default();
-    let label = match (&source.meeting, &source.app_name) {
-        (Some(app), _) => format!("{app}: {}", source.title),
-        (None, Some(app)) if !app.is_empty() => format!("{app}: {}", source.title),
-        _ => source.title.clone(),
+    let app = source
+        .meeting
+        .clone()
+        .or_else(|| source.app_name.clone().filter(|a| !a.is_empty()));
+    let label = match &app {
+        Some(app) => format!("{app}: {}", source.title),
+        None => source.title.clone(),
     };
     let status = RecorderStatus::Recording {
         meeting_id: info.id.unwrap_or_default(),
@@ -282,6 +358,8 @@ fn begin(
             .map_or(0, |d| d.as_millis() as u64),
         microphone: request.microphone,
         system_audio: request.system_audio,
+        app: app.unwrap_or_else(|| "The call".into()),
+        video_paused: None,
     };
     Ok((recording, status, meeting.path().to_path_buf(), title))
 }
@@ -302,6 +380,8 @@ pub mod testing {
         pub fail_start: bool,
         pub deny_microphone: bool,
         pub interruption: Mutex<Option<String>>,
+        pub video_paused: Mutex<Option<WindowView>>,
+        pub shown: Mutex<Vec<SourceId>>,
         pub stopped: Mutex<u32>,
     }
 
@@ -360,6 +440,11 @@ pub mod testing {
                 control: Arc::clone(&self.0),
             }))
         }
+
+        fn show(&self, source: SourceId) -> Result<(), CaptureError> {
+            self.0.shown.lock().unwrap().push(source);
+            Ok(())
+        }
     }
 
     struct FakeRecording {
@@ -374,6 +459,10 @@ pub mod testing {
 
         fn interruption(&self) -> Option<String> {
             self.control.interruption.lock().unwrap().clone()
+        }
+
+        fn video_paused(&self) -> Option<WindowView> {
+            *self.control.video_paused.lock().unwrap()
         }
 
         fn stop(self: Box<Self>) -> Result<CaptureStats, CaptureError> {
@@ -515,6 +604,71 @@ mod tests {
             }
         );
         wait_for("the job", || rig.jobs.for_meeting(&id).is_some());
+    }
+
+    fn video_paused(status: &RecorderStatus) -> Option<WindowView> {
+        match status {
+            RecorderStatus::Recording { video_paused, .. } => *video_paused,
+            other => panic!("not recording: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn paused_video_is_reported_and_alerted_once_a_minute() {
+        let rig = rig(FakeControl::default());
+        rig.recorder.start(request(), ffmpeg()).unwrap();
+
+        *rig.control.video_paused.lock().unwrap() = Some(WindowView::Hidden);
+        wait_for("the pause", || {
+            video_paused(&rig.recorder.status()) == Some(WindowView::Hidden)
+        });
+        let alerts = rig.notify.take_alerts();
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].0, "Video paused");
+        assert!(
+            alerts[0]
+                .1
+                .starts_with("Zoom's window is minimized or on another desktop"),
+            "{}",
+            alerts[0].1
+        );
+        assert!(alerts[0].1.contains("Audio is still recording"));
+
+        *rig.control.video_paused.lock().unwrap() = None;
+        wait_for("the resume", || {
+            video_paused(&rig.recorder.status()).is_none()
+        });
+        // Paused again soon after: the UI shows it, but no second alert.
+        *rig.control.video_paused.lock().unwrap() = Some(WindowView::Covered);
+        wait_for("the second pause", || {
+            video_paused(&rig.recorder.status()) == Some(WindowView::Covered)
+        });
+        assert!(rig.notify.take_alerts().is_empty());
+        let paused_events = rig
+            .notify
+            .take()
+            .into_iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    AppEvent::Recorder {
+                        status: RecorderStatus::Recording {
+                            video_paused: Some(_),
+                            ..
+                        }
+                    }
+                )
+            })
+            .count();
+        assert_eq!(paused_events, 2);
+
+        rig.recorder.show().unwrap();
+        assert_eq!(*rig.control.shown.lock().unwrap(), [SourceId::Window(42)]);
+        rig.recorder.stop().unwrap();
+        wait_for("the recorder to be idle", || {
+            matches!(rig.recorder.status(), RecorderStatus::Idle { .. })
+        });
+        assert!(rig.recorder.show().is_err(), "nothing to show when idle");
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::time::Duration;
 use anyhow::{Context, bail};
 use clap::Args;
 use sakshi_app::{create_meeting, load_settings, save_settings};
-use sakshi_capture::{Capture, CaptureConfig, PermissionState, Source, SourceId};
+use sakshi_capture::{Capture, CaptureConfig, PermissionState, Source, SourceId, WindowView};
 use sakshi_core::{DataDir, Settings};
 use sakshi_media::Ffmpeg;
 
@@ -121,9 +121,25 @@ pub fn run(data: &DataDir, args: RecordArgs) -> anyhow::Result<()> {
     eprintln!("Recording \"{title}\" into {}", meeting.path().display());
     eprintln!("Press Ctrl-C to stop.");
     let limit = args.duration.map(Duration::from_secs);
+    let mut paused = None;
     let reason = loop {
         std::thread::sleep(Duration::from_millis(250));
         let elapsed = recording.elapsed();
+        let now_paused = recording.video_paused();
+        if now_paused != paused {
+            if live {
+                eprintln!();
+            }
+            match now_paused {
+                Some(view) => eprintln!(
+                    "{}  Video paused: {}. Audio is still recording.",
+                    clock(elapsed),
+                    out_of_view(view)
+                ),
+                None => eprintln!("{}  Video resumed.", clock(elapsed)),
+            }
+            paused = now_paused;
+        }
         if live {
             eprint!("\r● {}  ", clock(elapsed));
             let _ = std::io::stderr().flush();
@@ -149,6 +165,15 @@ pub fn run(data: &DataDir, args: RecordArgs) -> anyhow::Result<()> {
         clock(Duration::from_millis(stats.duration_ms)),
         stats.video_frames
     );
+    if !stats.video_pauses.is_empty() {
+        let total: u64 = stats.video_pauses.iter().map(|p| p.to_ms - p.from_ms).sum();
+        eprintln!(
+            "Video was paused {} time(s), {} in all, while the window was out of view; \
+             the audio is complete.",
+            stats.video_pauses.len(),
+            clock(Duration::from_millis(total))
+        );
+    }
 
     sakshi_capture::finalize(&meeting, &ffmpeg, args.keep_raw)?;
     println!("recording: {}", meeting.recording_mp4().display());
@@ -160,6 +185,19 @@ pub fn run(data: &DataDir, args: RecordArgs) -> anyhow::Result<()> {
         return Ok(());
     }
     process::run(data, ProcessArgs::for_folder(meeting.path().to_path_buf()))
+}
+
+fn out_of_view(view: WindowView) -> &'static str {
+    match view {
+        WindowView::Covered => {
+            "the window is behind other windows, so its app stopped drawing it; \
+             leave any part of it showing"
+        }
+        _ => {
+            "the window is minimized or on another desktop, so its app stopped \
+             drawing it; bring it back to this desktop"
+        }
+    }
 }
 
 fn clock(d: Duration) -> String {

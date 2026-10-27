@@ -112,6 +112,13 @@ fn stop_recording(backend: Shared<'_>) -> Result<(), String> {
     backend.recorder.stop().map_err(|e| format!("{e:#}"))
 }
 
+/// Synchronous, so it runs on the main thread while Sakshi is still the
+/// active app from the click; macOS only lets the active app hand focus on.
+#[tauri::command]
+fn show_recorded_window(backend: Shared<'_>) -> Result<(), String> {
+    backend.recorder.show().map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn list_meetings(
     backend: Shared<'_>,
@@ -257,6 +264,7 @@ fn main() {
         .with_writer(std::io::stderr)
         .init();
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data = DataDir::from_env_or_default()?;
@@ -286,6 +294,7 @@ fn main() {
             recorder_status,
             start_recording,
             stop_recording,
+            show_recorded_window,
             list_meetings,
             get_meeting,
             process_meeting,

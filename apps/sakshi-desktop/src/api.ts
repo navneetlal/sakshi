@@ -42,6 +42,10 @@ export type RecorderStatus =
       started_at_ms: number;
       microphone: boolean;
       system_audio: boolean;
+      /** The app being recorded, for messages ("Zoom"). */
+      app: string;
+      /** Set while the window's video is paused because it's out of view. */
+      video_paused: "covered" | "hidden" | null;
     }
   | { state: "stopping"; meeting_id: string; title: string };
 
@@ -220,6 +224,7 @@ export const api = {
   startRecording: (request: StartRequest) =>
     invoke<RecorderStatus>("start_recording", { request }),
   stopRecording: () => invoke<void>("stop_recording"),
+  showRecordedWindow: () => invoke<void>("show_recorded_window"),
   listMeetings: (query: string | null) =>
     invoke<MeetingItem[]>("list_meetings", { query }),
   getMeeting: (id: string) => invoke<MeetingDetail>("get_meeting", { id }),

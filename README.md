@@ -100,6 +100,15 @@ Download `Sakshi_<version>_aarch64.dmg` from the
   light/dark), the reminder to tell participants, the data folder, and
   whether FFmpeg, the speech engine, and the models are found.
 
+**Keep part of the call window in view while recording.** Sakshi records
+what the call app draws, and apps stop drawing windows nobody can see:
+every app for a minimized window, and browsers and web-based apps (Meet,
+the new Teams) also for one that is fully covered or on another desktop.
+Any sliver showing is enough. When video stops, Sakshi says so in the app
+and in a notification, with a button to bring the window back; the audio,
+and so the transcript, is recorded either way. Details under
+[Known limitations](#known-limitations).
+
 Sakshi never summarizes. Ask your AI client to summarize a meeting; it
 reads the transcript through Sakshi and saves the summary back, where it
 shows under the meeting's Summaries.
@@ -212,6 +221,11 @@ macOS asks for **Screen Recording** and **Microphone** access the first
 time. For a command-line tool the permission belongs to the app you run it
 from (Terminal, iTerm, ...). Turn it on in System Settings > Privacy &
 Security, then quit and reopen that app.
+
+If the window's video pauses because the window is out of view, the
+command prints when it pauses and resumes, and the totals at the end; the
+spans are kept in the meeting's `capture/capture.json` under
+`stats.video_pauses`.
 
 If Sakshi is interrupted mid-recording, the capture files stay readable;
 `sakshi-cli process <meeting folder>` finishes the recording and processes
@@ -367,9 +381,24 @@ Hindi clip from FLEURS, both CC BY 4.0. See
 - Word confidence is always 1.0 with this model.
 - Short mic segments ("yeah", "okay") are never treated as bleed, so a
   one-word echo of the remote side can remain.
-- A window that is minimized or on another desktop can be picked, but
-  macOS may not deliver new video frames for it until it's visible again
-  (not yet checked live; DECISIONS.md D26). Audio is unaffected.
+- Window video depends on the app drawing the window, and apps stop
+  drawing windows that can't be seen. Checked live on macOS 27
+  (DECISIONS.md D32):
+
+  | The call window is…            | Native app (AppKit) | Web-based app (WebKit) |
+  | ------------------------------ | ------------------- | ---------------------- |
+  | in view, even only a sliver    | recorded            | recorded               |
+  | fully covered by other windows | recorded            | stops, or ~1 update/s  |
+  | on another desktop             | recorded            | stops                  |
+  | minimized                      | stops               | stops                  |
+
+  No capture API can record pixels an app hasn't drawn, so Sakshi can't
+  prevent this. It watches for it instead: when the window is out of view
+  and its video stops, the app shows a warning with a button to bring the
+  window back, sends a notification, and keeps the pause in the meeting's
+  `capture.json`. The recording holds the last picture through a pause.
+  Audio is never affected. Chromium browsers weren't tested; their
+  published design throttles hidden windows the same way.
 - `Sakshi.app` isn't notarized, so macOS blocks it the first time until
   you clear its download flag (see [Install](#install)).
 

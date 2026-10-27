@@ -12,6 +12,7 @@ mod finalize;
 mod meeting_apps;
 mod types;
 mod video;
+mod watch;
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -26,6 +27,7 @@ pub use finalize::{CaptureManifest, capture_dir, finalize, manifest_path, needs_
 pub use meeting_apps::meeting_label;
 pub use types::*;
 pub use video::{FrameSlot, VideoEncoder, VideoFrame, VideoRecorder};
+pub use watch::{PauseTracker, Rect, STALE, VideoPause, WindowView, fully_covered};
 
 /// A platform's recording backend.
 pub trait Capture {
@@ -50,6 +52,10 @@ pub trait Capture {
         meeting: &MeetingDir,
         ffmpeg: &Ffmpeg,
     ) -> Result<Box<dyn Recording>, CaptureError>;
+
+    /// Brings a window's app to the front, switching to the desktop it is
+    /// on. Displays are always in view, so they need nothing.
+    fn show(&self, source: SourceId) -> Result<(), CaptureError>;
 }
 
 /// A recording in progress.
@@ -58,6 +64,12 @@ pub trait Recording {
 
     /// A problem that stopped capture early (e.g. the window closed).
     fn interruption(&self) -> Option<String>;
+
+    /// Where the recorded window is while its video is paused because it
+    /// can't be seen; `None` while video is live.
+    fn video_paused(&self) -> Option<WindowView> {
+        None
+    }
 
     /// Stops capturing and closes every file.
     fn stop(self: Box<Self>) -> Result<CaptureStats, CaptureError>;
@@ -123,6 +135,10 @@ impl Capture for Unsupported {
         _meeting: &MeetingDir,
         _ffmpeg: &Ffmpeg,
     ) -> Result<Box<dyn Recording>, CaptureError> {
+        Err(CaptureError::Unsupported(NOT_YET))
+    }
+
+    fn show(&self, _source: SourceId) -> Result<(), CaptureError> {
         Err(CaptureError::Unsupported(NOT_YET))
     }
 }
