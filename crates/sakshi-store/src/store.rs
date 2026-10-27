@@ -4,10 +4,10 @@ use std::time::Duration;
 use jiff::{Timestamp, Unit};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
 use sakshi_core::{
-    Frame, MeetingDir, MeetingInfo, Segment, Speaker, Summary, Track, Transcript, Word, read_json,
-    write_json_atomic,
+    Frame, MeetingDir, MeetingInfo, Segment, Speaker, Summary, Track, Transcript, VideoPause, Word,
+    read_json, write_json_atomic,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{StoreError, schema, summaries};
 
@@ -27,6 +27,10 @@ pub struct MeetingRecord {
     pub speakers: Vec<String>,
     pub segment_count: u32,
     pub frame_count: u32,
+    /// Where the recorded window's video paused because the window was out
+    /// of view, in time order; empty for a display or a recording made
+    /// elsewhere.
+    pub video_pauses: Vec<VideoPause>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -114,8 +118,23 @@ pub(crate) fn check_version(conn: &Connection) -> Result<(), StoreError> {
     }
 }
 
+/// Upgrades the database at `path` if `conn` shows an older schema, and
+/// says whether it did. Without this, after updating Sakshi the MCP server
+/// and `sakshi-cli meetings`, which only read, would refuse the database
+/// until something indexed a meeting.
+pub(crate) fn upgrade_if_outdated(conn: &Connection, path: &Path) -> Result<bool, StoreError> {
+    match check_version(conn) {
+        Err(StoreError::OutdatedSchema { found, .. }) => {
+            tracing::info!(found, "upgrading the database written by an older Sakshi");
+            Store::open(path)?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
 const MEETING_COLUMNS: &str = "id, title, folder, started_at, indexed_at, duration_ms, \
-     languages, speakers, segment_count, frame_count";
+     languages, speakers, segment_count, frame_count, video_pauses";
 
 fn meeting_from_row(row: &Row<'_>) -> rusqlite::Result<MeetingRecord> {
     let list = |i: usize| -> rusqlite::Result<Vec<String>> {
@@ -132,7 +151,40 @@ fn meeting_from_row(row: &Row<'_>) -> rusqlite::Result<MeetingRecord> {
         speakers: list(7)?,
         segment_count: row.get(8)?,
         frame_count: row.get(9)?,
+        video_pauses: serde_json::from_str(&row.get::<_, String>(10)?).unwrap_or_default(),
     })
+}
+
+/// The video pauses a Sakshi recording kept in `capture/capture.json`.
+/// Recordings made elsewhere have none; an unreadable file is logged and
+/// treated as none, since the transcript is still worth indexing.
+fn video_pauses(dir: &MeetingDir) -> Vec<VideoPause> {
+    #[derive(Default, Deserialize)]
+    #[serde(default)]
+    struct Capture {
+        stats: Option<Stats>,
+    }
+    #[derive(Default, Deserialize)]
+    #[serde(default)]
+    struct Stats {
+        video_pauses: Vec<VideoPause>,
+    }
+
+    let path = dir.capture_json();
+    if !path.exists() {
+        return Vec::new();
+    }
+    match read_json::<Capture>(&path) {
+        Ok(capture) => {
+            let mut pauses = capture.stats.map(|s| s.video_pauses).unwrap_or_default();
+            pauses.sort_by_key(|p| p.from_ms);
+            pauses
+        }
+        Err(e) => {
+            tracing::warn!("ignoring the video pauses in {}: {e}", path.display());
+            Vec::new()
+        }
+    }
 }
 
 fn parse_track(s: &str) -> Track {
@@ -181,19 +233,27 @@ impl Store {
         Ok(Self { conn })
     }
 
-    /// Opens an existing database for queries only.
+    /// Opens an existing database for queries only. One written by an older
+    /// Sakshi is upgraded first (see [`upgrade_if_outdated`]).
     pub fn open_read_only(path: &Path) -> Result<Self, StoreError> {
         if !path.exists() {
             return Err(StoreError::NoDatabase {
                 path: path.to_path_buf(),
             });
         }
-        let conn = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )?;
-        configure(&conn)?;
-        conn.pragma_update(None, "query_only", true)?;
+        let connect = || -> Result<Connection, StoreError> {
+            let conn = Connection::open_with_flags(
+                path,
+                OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )?;
+            configure(&conn)?;
+            conn.pragma_update(None, "query_only", true)?;
+            Ok(conn)
+        };
+        let mut conn = connect()?;
+        if upgrade_if_outdated(&conn, path)? {
+            conn = connect()?;
+        }
         check_version(&conn)?;
         Ok(Self { conn })
     }
@@ -274,6 +334,7 @@ impl Store {
             speakers,
             segment_count: u32::try_from(transcript.segments.len()).unwrap_or(u32::MAX),
             frame_count: u32::try_from(frames.len()).unwrap_or(u32::MAX),
+            video_pauses: video_pauses(dir),
         };
 
         let tx = self.conn.transaction()?;
@@ -283,14 +344,15 @@ impl Store {
         )?;
         tx.execute(
             "INSERT INTO meetings (id, title, folder, started_at, indexed_at, duration_ms,
-                                   languages, speakers, segment_count, frame_count)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                                   languages, speakers, segment_count, frame_count,
+                                   video_pauses)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT (id) DO UPDATE SET
                 title = excluded.title, folder = excluded.folder,
                 started_at = excluded.started_at, indexed_at = excluded.indexed_at,
                 duration_ms = excluded.duration_ms, languages = excluded.languages,
                 speakers = excluded.speakers, segment_count = excluded.segment_count,
-                frame_count = excluded.frame_count",
+                frame_count = excluded.frame_count, video_pauses = excluded.video_pauses",
             params![
                 record.id,
                 record.title,
@@ -302,6 +364,7 @@ impl Store {
                 serde_json::to_string(&record.speakers).expect("strings serialize"),
                 record.segment_count,
                 record.frame_count,
+                serde_json::to_string(&record.video_pauses).expect("pauses serialize"),
             ],
         )?;
         for table in ["segments", "frames", "segment_search"] {

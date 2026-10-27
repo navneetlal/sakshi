@@ -25,9 +25,10 @@ use sakshi_media::Ffmpeg;
 pub use audio::{AudioChunk, AudioRecorder, AudioTrackWriter, downmix};
 pub use finalize::{CaptureManifest, capture_dir, finalize, manifest_path, needs_finalize};
 pub use meeting_apps::meeting_label;
+pub use sakshi_core::{VideoPause, WindowView};
 pub use types::*;
 pub use video::{FrameSlot, VideoEncoder, VideoFrame, VideoRecorder};
-pub use watch::{PauseTracker, Rect, STALE, VideoPause, WindowView, fully_covered};
+pub use watch::{PauseTracker, Rect, STALE, fully_covered};
 
 /// A platform's recording backend.
 pub trait Capture {

@@ -61,6 +61,41 @@ pub struct Frame {
     pub height: u32,
 }
 
+/// How much of a recorded window could be seen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowView {
+    /// At least part of it was on screen.
+    Visible,
+    /// On screen, but entirely behind other windows.
+    Covered,
+    /// Minimized, or on a desktop that wasn't showing.
+    Hidden,
+}
+
+/// A stretch of a recording in which the recorded window was out of view
+/// and its app sent little or no new video, so the recording holds an old
+/// picture there. Audio is complete through it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VideoPause {
+    /// Milliseconds from the start of the recording.
+    pub from_ms: u64,
+    pub to_ms: u64,
+    /// Where the window was when the pause ended.
+    pub window: WindowView,
+}
+
+impl VideoPause {
+    pub fn contains(&self, at_ms: u64) -> bool {
+        (self.from_ms..self.to_ms).contains(&at_ms)
+    }
+
+    /// Whether the pause overlaps `[start_ms, end_ms)`.
+    pub fn overlaps(&self, start_ms: u64, end_ms: u64) -> bool {
+        self.from_ms < end_ms && start_ms < self.to_ms
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,6 +110,20 @@ mod tests {
         let settings: Settings =
             serde_json::from_str(r#"{"language": "hi", "consent_reminder": false}"#).unwrap();
         assert!(!settings.consent_reminder);
+    }
+
+    #[test]
+    fn video_pauses_serialize_in_snake_case_and_span_half_open() {
+        let pause = VideoPause {
+            from_ms: 1_000,
+            to_ms: 2_000,
+            window: WindowView::Covered,
+        };
+        let json = serde_json::to_string(&pause).unwrap();
+        assert_eq!(json, r#"{"from_ms":1000,"to_ms":2000,"window":"covered"}"#);
+        assert!(pause.contains(1_000) && pause.contains(1_999) && !pause.contains(2_000));
+        assert!(pause.overlaps(0, 1_001) && pause.overlaps(1_999, 5_000));
+        assert!(!pause.overlaps(0, 1_000) && !pause.overlaps(2_000, 3_000));
     }
 
     #[test]

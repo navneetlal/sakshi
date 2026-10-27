@@ -225,7 +225,8 @@ Security, then quit and reopen that app.
 If the window's video pauses because the window is out of view, the
 command prints when it pauses and resumes, and the totals at the end; the
 spans are kept in the meeting's `capture/capture.json` under
-`stats.video_pauses`.
+`stats.video_pauses`, and indexed, so AI clients are told which key frames
+are out of date.
 
 If Sakshi is interrupted mid-recording, the capture files stay readable;
 `sakshi-cli process <meeting folder>` finishes the recording and processes
@@ -287,8 +288,8 @@ whether or not anything else is running. It only reads, except for
 | Tool | |
 |---|---|
 | `list_meetings(since?, until?, query?, limit?)` | Meetings, most recent first |
-| `get_meeting(meeting_id)` | Title, times, duration, speaker labels, frame count, saved summaries |
-| `get_transcript(meeting_id, start_ms?, end_ms?, format?, include_words?, cursor?)` | Segments with speakers, times, and the key frame on screen, in pages |
+| `get_meeting(meeting_id)` | Title, times, duration, speaker labels, frame count, where the video paused, saved summaries |
+| `get_transcript(meeting_id, start_ms?, end_ms?, format?, include_words?, cursor?)` | Segments with speakers, times, the key frame on screen, and whether the video was paused, in pages |
 | `get_frames(meeting_id, start_ms?, end_ms?, max?)` | Key frames as images (up to 16) |
 | `get_frame_at(meeting_id, at_ms)` | The key frame on screen at a moment |
 | `search_transcripts(query, limit?)` | Matching segments across meetings |

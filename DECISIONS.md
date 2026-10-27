@@ -764,9 +764,7 @@ considered. Newest entries go at the bottom.
   the AppKit window covered, full screen, and on another desktop raised
   nothing. The desktop banner and notification are covered by backend
   tests but weren't seen on screen.
-- **Not done:** MCP clients don't see the pauses yet. They live in
-  `capture.json`, not the index, so a client may read a frozen frame as
-  still on screen through a gap. Indexing them is the next step.
+- **For AI clients:** see D33.
 - **Alternatives:**
   - A virtual display (private `CGVirtualDisplay`) that keeps the call
     window always "visible": private API, and the user can't see the call.
@@ -774,3 +772,34 @@ considered. Newest entries go at the bottom.
     more permission, and it still can't move a window between desktops.
   - Warning whenever the window is out of view: noise for native apps,
     which keep drawing.
+
+## D33. Video pauses are indexed and told to MCP clients
+
+- **Decision:** `VideoPause` and `WindowView` moved to `sakshi-core`, so
+  the store reads them without depending on the capture crate. Schema 2
+  adds `meetings.video_pauses` (a JSON list, like `languages` and
+  `speakers`), filled at indexing from `capture/capture.json`; a missing
+  file means none, and an unreadable one is logged and treated as none,
+  since the transcript is still worth indexing. Over MCP:
+  - `get_meeting` and `list_meetings` include `video_pauses` (`from_ms`,
+    `to_ms`, `window`), left out when there are none;
+  - JSON transcript segments that start in a pause carry
+    `video_paused: true`, and the text format marks where each pause
+    begins;
+  - `get_frame_at` inside a pause, and `get_frames` over one, add a note
+    that the frame is from before the pause;
+  - the server instructions explain all of this.
+- **Upgrading:** an older database is upgraded the first time anything
+  opens it, read-only openers and the summary writer included. Otherwise
+  after an update the MCP server and `sakshi-cli meetings` would refuse
+  the database ("run sakshi-cli once") until a meeting was indexed. Checked
+  on a copy of a real 0.1.0 database: schema 1 to 2 through
+  `sakshi-cli meetings list`, all four meetings intact.
+- **Why:** a key frame is "on screen" until the next one, so through a
+  pause a client would read a frozen picture as what everyone was looking
+  at.
+- **Not done:** meetings indexed before schema 2 show no pauses until
+  they are processed again; only recordings made since D32 have any.
+- **Alternatives:** a `video_pauses` table (more joins for a handful of
+  rows per meeting); reading `capture.json` from the MCP server on every
+  call (the index exists so queries don't touch the folders).

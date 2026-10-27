@@ -63,6 +63,11 @@ const MIGRATIONS: &[&str] = &[
         tokenize = 'trigram'
     );
     "#,
+    // 2: where a recorded window's video paused, as a JSON list of
+    // `VideoPause` from the meeting's `capture/capture.json`.
+    r#"
+    ALTER TABLE meetings ADD COLUMN video_pauses TEXT NOT NULL DEFAULT '[]';
+    "#,
 ];
 
 pub(crate) const VERSION: i64 = MIGRATIONS.len() as i64;
@@ -88,4 +93,48 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
         tracing::info!(version = i + 1, "database schema upgraded");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{MeetingQuery, Store, SummaryWriter};
+
+    /// A database as Sakshi 0.1.0 left it: schema 1 with one meeting.
+    fn version_1(path: &std::path::Path) {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute(
+            "INSERT INTO meetings VALUES ('m1', 'Standup', '/tmp/m1', NULL,
+             '2026-10-26T10:00:00Z', 60000, '[]', '[]', 0, 0)",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn readers_and_the_summary_writer_upgrade_an_older_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sakshi.db");
+        version_1(&path);
+
+        let store = Store::open_read_only(&path).unwrap();
+        let meetings = store
+            .meetings(&MeetingQuery {
+                limit: 5,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(meetings.len(), 1);
+        assert!(meetings[0].video_pauses.is_empty());
+        drop(store);
+        assert_eq!(version(&Connection::open(&path).unwrap()).unwrap(), VERSION);
+
+        let other = dir.path().join("other.db");
+        version_1(&other);
+        SummaryWriter::open(&other).unwrap();
+        let conn = Connection::open(&other).unwrap();
+        assert_eq!(version(&conn).unwrap(), VERSION);
+    }
 }

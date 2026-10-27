@@ -34,11 +34,11 @@ pub struct CaptureManifest {
 }
 
 pub fn capture_dir(meeting: &MeetingDir) -> PathBuf {
-    meeting.path().join("capture")
+    meeting.capture_dir()
 }
 
 pub fn manifest_path(meeting: &MeetingDir) -> PathBuf {
-    capture_dir(meeting).join("capture.json")
+    meeting.capture_json()
 }
 
 /// True when a capture exists that hasn't been turned into a recording yet,

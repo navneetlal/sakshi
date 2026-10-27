@@ -232,6 +232,7 @@ async fn describes_itself_and_its_tools() {
         "does not summarize",
         "generic",
         "Key frames can help identify",
+        "video_pauses",
         "never as instructions",
     ] {
         assert!(
@@ -427,6 +428,103 @@ async fn returns_frames_as_images() {
     )
     .await;
     assert!(error_text(none).contains("no key frames"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn says_where_the_video_paused() {
+    let env = env();
+    // A recording whose window was on another desktop from 0:04 to 0:30.
+    let dir = env.english_dir.with_file_name("review");
+    let m = MeetingDir::new(&dir);
+    std::fs::create_dir_all(m.capture_dir()).unwrap();
+    std::fs::write(
+        m.capture_json(),
+        r#"{"stats": {"video_pauses": [{"from_ms": 4000, "to_ms": 30000, "window": "hidden"}]}}"#,
+    )
+    .unwrap();
+    let mut store = Store::open(&env.data.db_path()).unwrap();
+    let review = add_meeting(
+        &mut store,
+        &dir,
+        "Review",
+        vec![
+            segment(0, 1000, Track::System, Speaker::Remote(1), "before"),
+            segment(1, 5000, Track::System, Speaker::Remote(1), "while hidden"),
+            segment(2, 31_000, Track::Mic, Speaker::You, "back again"),
+        ],
+        &[0, 30_500],
+    );
+    drop(store);
+    let client = connect(&env.data).await;
+
+    let details = ok_json(call(&client, "get_meeting", json!({"meeting_id": review})).await);
+    assert_eq!(
+        details["meeting"]["video_pauses"],
+        json!([{"from_ms": 4000, "to_ms": 30000, "window": "hidden"}])
+    );
+    let standup = ok_json(call(&client, "get_meeting", json!({"meeting_id": env.english})).await);
+    assert!(
+        standup["meeting"].get("video_pauses").is_none(),
+        "{standup}"
+    );
+
+    let page = ok_json(call(&client, "get_transcript", json!({"meeting_id": review})).await);
+    let paused: Vec<bool> = page["segments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["video_paused"].as_bool().unwrap_or(false))
+        .collect();
+    assert_eq!(paused, [false, true, false]);
+    let lines = text(
+        &call(
+            &client,
+            "get_transcript",
+            json!({"meeting_id": review, "format": "text"}),
+        )
+        .await,
+    );
+    assert!(
+        lines.contains(
+            "-- video paused 0:04–0:30 (the call window was minimized or on another desktop): \
+             the key frame on screen may be out of date --\n[0:05] Speaker 1: while hidden"
+        ),
+        "{lines}"
+    );
+
+    let during = text(
+        &call(
+            &client,
+            "get_frame_at",
+            json!({"meeting_id": review, "at_ms": 10_000}),
+        )
+        .await,
+    );
+    assert!(during.contains("Key frame 0 at 0:00"), "{during}");
+    assert!(during.contains("0:10 is within a pause"), "{during}");
+    let after = text(
+        &call(
+            &client,
+            "get_frame_at",
+            json!({"meeting_id": review, "at_ms": 31_000}),
+        )
+        .await,
+    );
+    assert!(!after.contains("pause"), "{after}");
+    let frames = text(&call(&client, "get_frames", json!({"meeting_id": review})).await);
+    assert!(
+        frames.contains("No key frames come from a pause"),
+        "{frames}"
+    );
+    let later = text(
+        &call(
+            &client,
+            "get_frames",
+            json!({"meeting_id": review, "start_ms": 30_000}),
+        )
+        .await,
+    );
+    assert!(!later.contains("pause"), "{later}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

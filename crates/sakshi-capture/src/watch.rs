@@ -14,7 +14,7 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use sakshi_core::{VideoPause, WindowView};
 
 /// The span over which new frames are counted.
 pub const STALE: Duration = Duration::from_secs(2);
@@ -28,29 +28,6 @@ pub const MIN_FRAMES: u64 = 3;
 pub const LIVE_FRAMES: u64 = 8;
 
 const STALE_MS: u64 = STALE.as_millis() as u64;
-
-/// How much of a window can be seen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WindowView {
-    /// At least part of it is on screen.
-    Visible,
-    /// On screen, but entirely behind other windows.
-    Covered,
-    /// Minimized, or on a desktop that isn't showing.
-    Hidden,
-}
-
-/// A stretch of a recording in which the window was out of view and sent
-/// little or no new video.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct VideoPause {
-    /// Milliseconds from the start of the recording.
-    pub from_ms: u64,
-    pub to_ms: u64,
-    /// Where the window was when the pause ended.
-    pub window: WindowView,
-}
 
 /// Turns periodic looks at a window into [`VideoPause`]s.
 #[derive(Debug, Default)]
@@ -347,16 +324,5 @@ mod tests {
                 window: Hidden
             }]
         );
-    }
-
-    #[test]
-    fn pauses_serialize_in_snake_case() {
-        let json = serde_json::to_string(&VideoPause {
-            from_ms: 1,
-            to_ms: 2,
-            window: Covered,
-        })
-        .unwrap();
-        assert_eq!(json, r#"{"from_ms":1,"to_ms":2,"window":"covered"}"#);
     }
 }

@@ -12,7 +12,7 @@ use rusqlite::{Connection, OpenFlags, Transaction, params};
 use sakshi_core::{MeetingDir, Summary};
 
 use crate::StoreError;
-use crate::store::{MeetingRecord, check_version, configure, format_time};
+use crate::store::{MeetingRecord, check_version, configure, format_time, upgrade_if_outdated};
 
 /// Largest summary accepted, in bytes of Markdown.
 pub const MAX_SUMMARY_BYTES: usize = 256 * 1024;
@@ -31,18 +31,26 @@ impl std::fmt::Debug for SummaryWriter {
 }
 
 impl SummaryWriter {
-    /// Opens an existing database; never creates or migrates one.
+    /// Opens an existing database, never creating one. One written by an
+    /// older Sakshi is upgraded first, as for reading.
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         if !path.exists() {
             return Err(StoreError::NoDatabase {
                 path: path.to_path_buf(),
             });
         }
-        let conn = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )?;
-        configure(&conn)?;
+        let connect = || -> Result<Connection, StoreError> {
+            let conn = Connection::open_with_flags(
+                path,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )?;
+            configure(&conn)?;
+            Ok(conn)
+        };
+        let mut conn = connect()?;
+        if upgrade_if_outdated(&conn, path)? {
+            conn = connect()?;
+        }
         check_version(&conn)?;
         Ok(Self { conn })
     }

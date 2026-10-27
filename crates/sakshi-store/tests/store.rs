@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use sakshi_core::{
-    Frame, MeetingDir, MeetingInfo, Segment, Speaker, Track, Transcript, Word, read_json,
-    write_json_atomic,
+    Frame, MeetingDir, MeetingInfo, Segment, Speaker, Track, Transcript, VideoPause, WindowView,
+    Word, read_json, write_json_atomic,
 };
 use sakshi_store::{MeetingQuery, Store, StoreError, SummaryWriter, TimeRange};
 
@@ -183,6 +183,50 @@ fn indexes_a_meeting_and_assigns_a_stable_id() {
             .len(),
         4
     );
+}
+
+#[test]
+fn indexes_where_the_video_paused() {
+    let mut f = Fixture::new();
+    let m = meeting(&f.dir("call"), Some("Call"), None, english());
+    let plain = f.store.index_meeting(&m).unwrap();
+    assert!(plain.video_pauses.is_empty(), "no capture.json, no pauses");
+
+    // As a recording writes it, with fields the index doesn't keep and the
+    // pauses out of order.
+    std::fs::create_dir_all(m.capture_dir()).unwrap();
+    std::fs::write(
+        m.capture_json(),
+        r#"{"started_at": "2026-10-27T09:00:00Z", "fps": 15,
+            "stats": {"duration_ms": 60000, "video_frames": 900,
+                      "video_pauses": [
+                          {"from_ms": 40000, "to_ms": 45000, "window": "covered"},
+                          {"from_ms": 12000, "to_ms": 30000, "window": "hidden"}]}}"#,
+    )
+    .unwrap();
+    let record = f.store.index_meeting(&m).unwrap();
+    let pauses = [
+        VideoPause {
+            from_ms: 12_000,
+            to_ms: 30_000,
+            window: WindowView::Hidden,
+        },
+        VideoPause {
+            from_ms: 40_000,
+            to_ms: 45_000,
+            window: WindowView::Covered,
+        },
+    ];
+    assert_eq!(record.video_pauses, pauses);
+    let ro = Store::open_read_only(&f.db()).unwrap();
+    assert_eq!(ro.require_meeting(&record.id).unwrap().video_pauses, pauses);
+
+    // A capture from before pauses were kept, or a damaged file, still
+    // indexes, with none.
+    std::fs::write(m.capture_json(), r#"{"stats": {"duration_ms": 1}}"#).unwrap();
+    assert!(f.store.index_meeting(&m).unwrap().video_pauses.is_empty());
+    std::fs::write(m.capture_json(), "{not json").unwrap();
+    assert!(f.store.index_meeting(&m).unwrap().video_pauses.is_empty());
 }
 
 #[test]

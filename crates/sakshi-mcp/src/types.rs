@@ -142,6 +142,22 @@ pub struct MeetingOut {
     pub languages: Vec<String>,
     pub segment_count: u32,
     pub frame_count: u32,
+    /// Stretches where the recorded window was out of view and its app
+    /// stopped drawing it, so the video there, and the key frame on screen,
+    /// is out of date. The audio and transcript are complete. Absent when
+    /// there were none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub video_pauses: Vec<VideoPauseOut>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct VideoPauseOut {
+    /// Milliseconds from the start of the recording.
+    pub from_ms: u64,
+    pub to_ms: u64,
+    /// "covered" (behind other windows) or "hidden" (minimized, or on
+    /// another desktop).
+    pub window: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -190,6 +206,11 @@ pub struct SegmentOut {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "u64")]
     pub frame_id: Option<u64>,
+    /// True when the segment started while the video was paused (see the
+    /// meeting's `video_pauses`): the key frame is from before the pause
+    /// and may be out of date. Absent otherwise.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub video_paused: bool,
     /// Per-word timing, when `include_words` was set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Vec<WordOut>")]

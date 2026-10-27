@@ -66,7 +66,7 @@ impl DataDir {
 /// ```text
 /// recording.mp4   mic.wav   system.wav   meeting.json
 /// frames/<ms>.jpg   frames.json   transcript.json   summaries/<id>.md
-/// pipeline.json   work/
+/// pipeline.json   work/   capture/capture.json (recorded by Sakshi)
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MeetingDir {
@@ -128,6 +128,17 @@ impl MeetingDir {
     pub fn work_dir(&self) -> PathBuf {
         self.dir.join("work")
     }
+
+    /// Where a recording is captured before it becomes `recording.mp4`.
+    pub fn capture_dir(&self) -> PathBuf {
+        self.dir.join("capture")
+    }
+
+    /// Describes the capture: its source, files, and what it got, including
+    /// where the video paused.
+    pub fn capture_json(&self) -> PathBuf {
+        self.capture_dir().join("capture.json")
+    }
 }
 
 #[cfg(test)]
@@ -147,5 +158,9 @@ mod tests {
             Path::new("/data/Sakshi/meetings/m1/transcript.json")
         );
         assert_eq!(MeetingDir::frame_file(12_000), "frames/12000.jpg");
+        assert_eq!(
+            meeting.capture_json(),
+            Path::new("/data/Sakshi/meetings/m1/capture/capture.json")
+        );
     }
 }
