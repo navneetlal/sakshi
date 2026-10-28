@@ -3,12 +3,14 @@
 //! clients. Front ends only add their own way of showing progress.
 
 mod error;
+mod import;
 pub mod mcp_setup;
 mod processing;
 mod recording;
 mod settings;
 
 pub use error::AppError;
+pub use import::{import_folder, request_import};
 pub use processing::{ProcessOptions, ProcessOutcome, Progress, process_meeting};
 pub use recording::create_meeting;
 pub use settings::{

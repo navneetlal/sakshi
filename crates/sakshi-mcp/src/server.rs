@@ -8,8 +8,13 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{Json, ServerHandler, tool, tool_handler, tool_router};
-use sakshi_core::{DataDir, Frame, Segment, VideoPause, WindowView};
-use sakshi_store::{MeetingQuery, MeetingRecord, Store, StoreError, SummaryWriter, TimeRange};
+use sakshi_core::{
+    DataDir, Frame, ImportRequest, ImportState, Language, Segment, SpeakerNames, VideoPause,
+    WindowView,
+};
+use sakshi_store::{
+    MeetingQuery, MeetingRecord, SpeakerNameWriter, Store, StoreError, SummaryWriter, TimeRange,
+};
 
 use crate::format::{clock, pause_at, pause_text, transcript_text};
 use crate::types::*;
@@ -20,14 +25,22 @@ Sakshi is a local recorder of video calls. It provides raw transcripts and key f
 (screenshots) of recorded meetings. It does not summarize or interpret them; if you write a \
 summary, save it with save_summary so the user can find it later.
 
-Speaker labels are generic, not names. \"You\" is the person who recorded the meeting (their \
-microphone). \"Speaker 1\", \"Speaker 2\", ... are the other participants, numbered in order of \
-first appearance within each meeting; the same number in two meetings need not be the same \
-person.
+Speaker labels are generic. \"You\" is the person who recorded the meeting (their microphone). \
+\"Speaker 1\", \"Speaker 2\", ... are the other participants, numbered in order of first \
+appearance within each meeting; the same number in two meetings need not be the same person. In \
+a recording imported from elsewhere, everyone, the user included, is a \"Speaker N\".
+
+The user may have named some speakers. Transcripts then show the name in place of the label, and \
+get_meeting lists each label with its name. When the user tells you who a speaker is, save it \
+with set_speaker_names. Never save a name the user hasn't given or confirmed.
 
 Key frames can help identify who \"Speaker N\" is: video-call layouts often highlight the \
 active speaker's tile or show name labels. Each transcript segment carries the frame_id on \
-screen when it started; pass a segment's start_ms to get_frame_at to see it.
+screen when it started; pass a segment's start_ms to get_frame_at to see it. Suggest what you \
+find to the user rather than saving it as a name.
+
+To transcribe a recording made elsewhere (Zoom, Teams, Fireflies, ...), pass the file's path to \
+import_recording.
 
 When the recorded call window was minimized, on another desktop, or covered, its app may have \
 stopped drawing it, so the video paused. Such stretches are listed as the meeting's \
@@ -50,11 +63,14 @@ const MAX_FRAME_BYTES: u64 = 5 * 1024 * 1024;
 const SUMMARIES_BUDGET: usize = 400 * 1024;
 const MAX_QUERY_CHARS: usize = 200;
 
-/// The Sakshi MCP server. Every query opens the database read-only; only
-/// `save_summary` opens a [`SummaryWriter`].
+/// The Sakshi MCP server. Every query opens the database read-only. Its
+/// only writes: `save_summary` through a [`SummaryWriter`],
+/// `set_speaker_names` through a [`SpeakerNameWriter`], and
+/// `import_recording`, which leaves a request for the app in `imports/`.
 #[derive(Clone)]
 pub struct SakshiMcp {
     db: Arc<PathBuf>,
+    data: Arc<DataDir>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -68,14 +84,16 @@ impl std::fmt::Debug for SakshiMcp {
 
 fn store_error(e: StoreError) -> String {
     match e {
-        StoreError::NoDatabase { .. } => {
-            "No meetings have been processed yet. Process one with `sakshi-cli process <folder>`."
-                .into()
-        }
+        StoreError::NoDatabase { .. } => "No meetings have been processed yet. Record a call in \
+             the Sakshi app, or import a recording with import_recording."
+            .into(),
         StoreError::UnknownMeeting(id) => {
             format!("No meeting with id {id}. Use list_meetings to find meeting ids.")
         }
         StoreError::InvalidSummary(why) => format!("Summary not saved: {why}."),
+        e @ (StoreError::UnknownSpeaker { .. } | StoreError::Core(_)) => {
+            format!("Names not saved: {e}.")
+        }
         other => format!("Sakshi could not read its data: {other}"),
     }
 }
@@ -147,6 +165,16 @@ fn check_query(query: &str) -> Result<String, String> {
     Ok(query.to_owned())
 }
 
+fn speakers_out(labels: &[String], names: &SpeakerNames) -> Vec<SpeakerOut> {
+    labels
+        .iter()
+        .map(|label| SpeakerOut {
+            label: label.clone(),
+            name: names.get(label).map(str::to_owned),
+        })
+        .collect()
+}
+
 fn meeting_out(m: MeetingRecord) -> MeetingOut {
     MeetingOut {
         id: m.id,
@@ -154,7 +182,8 @@ fn meeting_out(m: MeetingRecord) -> MeetingOut {
         started_at: m.started_at,
         processed_at: m.indexed_at,
         duration_ms: m.duration_ms,
-        speakers: m.speakers,
+        speakers: speakers_out(&m.speakers, &m.speaker_names),
+        imported_from: m.imported_from,
         languages: m.languages,
         segment_count: m.segment_count,
         frame_count: m.frame_count,
@@ -188,6 +217,58 @@ fn pauses_note(pauses: &[VideoPause], start_ms: u64, end_ms: u64) -> Option<Stri
             notes.join("; ")
         )
     })
+}
+
+/// Where an import that hasn't become a meeting yet stands, as a sentence
+/// saying what to do.
+fn import_status(request: &ImportRequest) -> String {
+    let file = request.file_name();
+    match &request.state {
+        ImportState::Queued => format!(
+            "Meeting {} ({file}) is waiting to be imported. The Sakshi app processes recordings \
+             one at a time; check again in a minute or two.",
+            request.id
+        ),
+        ImportState::Processing { step } => format!(
+            "Sakshi is processing meeting {} ({file}); current step: {step}. This takes a few \
+             minutes per hour of audio; check again shortly.",
+            request.id
+        ),
+        ImportState::Failed { error } => format!(
+            "Importing {file} failed: {error}. The user can retry it from the Sakshi app, or \
+             call import_recording again once the cause is fixed."
+        ),
+    }
+}
+
+/// Starts the Sakshi app in the background so it picks up an import, when
+/// this server runs from inside the app bundle. Says whether it did.
+fn wake_app() -> bool {
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
+    // .../Sakshi.app/Contents/MacOS/sakshi-mcp
+    let bundle = std::env::current_exe().ok().and_then(|exe| {
+        exe.ancestors()
+            .nth(3)
+            .filter(|b| b.extension().is_some_and(|e| e == "app"))
+            .map(Path::to_path_buf)
+    });
+    bundle.is_some_and(|b| {
+        std::process::Command::new("/usr/bin/open")
+            .arg("-g")
+            .arg(b)
+            .status()
+            .is_ok_and(|s| s.success())
+    })
+}
+
+/// `~/...` expanded, since clients often pass paths as the user writes them.
+fn expand_home(path: &str) -> PathBuf {
+    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
+        (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
+        _ => PathBuf::from(path),
+    }
 }
 
 /// The frame on screen at `at_ms`: the latest taken at or before it, else
@@ -260,6 +341,7 @@ impl SakshiMcp {
     pub fn new(data: &DataDir) -> Self {
         Self {
             db: Arc::new(data.db_path()),
+            data: Arc::new(data.clone()),
             tool_router: Self::tool_router(),
         }
     }
@@ -318,7 +400,7 @@ impl SakshiMcp {
     }
 
     #[tool(
-        description = "Details of one meeting: title, times, duration, speaker labels, frame count, and the summaries saved for it.",
+        description = "Details of one meeting: title, times, duration, speakers (labels and any names the user gave them), frame count, and the summaries saved for it. For a recording queued with import_recording, says how its import is going until it's ready.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn get_meeting(
@@ -326,6 +408,10 @@ impl SakshiMcp {
         Parameters(p): Parameters<MeetingIdParams>,
     ) -> Result<Json<MeetingDetails>, String> {
         let id = parse_meeting_id(&p.meeting_id)?;
+        // A request is removed once its meeting is indexed.
+        if let Ok(Some(request)) = ImportRequest::load(&self.data, &id) {
+            return Err(import_status(&request));
+        }
         self.read(move |store| {
             let meeting = find_meeting(store, &id)?;
             let summaries = store.summaries(&id).map_err(store_error)?;
@@ -346,7 +432,7 @@ impl SakshiMcp {
     }
 
     #[tool(
-        description = "Read a meeting's transcript: segments with speaker labels, times, and the key frame on screen. Long transcripts come in pages; pass next_cursor back as cursor to continue. Use start_ms/end_ms to read a window, and format \"text\" for a compact readable form.",
+        description = "Read a meeting's transcript: segments with speakers (their names where the user gave them, else labels), times, and the key frame on screen. Long transcripts come in pages; pass next_cursor back as cursor to continue. Use start_ms/end_ms to read a window, and format \"text\" for a compact readable form.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn get_transcript(
@@ -419,31 +505,37 @@ impl SakshiMcp {
                         &id,
                         &page,
                         &meeting.video_pauses,
+                        &meeting.speaker_names,
                         next_cursor.as_deref(),
                     ))])
                 }
                 TranscriptFormat::Json => {
                     let segments = page
                         .into_iter()
-                        .map(|(s, frame_id)| SegmentOut {
-                            id: s.id,
-                            start_ms: s.start_ms,
-                            end_ms: s.end_ms,
-                            track: s.track.to_string(),
-                            speaker: s.speaker.to_string(),
-                            video_paused: pause_at(&meeting.video_pauses, s.start_ms).is_some(),
-                            text: s.text,
-                            frame_id,
-                            words: include_words.then(|| {
-                                s.words
-                                    .into_iter()
-                                    .map(|w| WordOut {
-                                        start_ms: w.start_ms,
-                                        end_ms: w.end_ms,
-                                        text: w.text,
-                                    })
-                                    .collect()
-                            }),
+                        .map(|(s, frame_id)| {
+                            let label = s.speaker.to_string();
+                            let name = meeting.speaker_names.get(&label).map(str::to_owned);
+                            SegmentOut {
+                                id: s.id,
+                                start_ms: s.start_ms,
+                                end_ms: s.end_ms,
+                                track: s.track.to_string(),
+                                speaker_label: name.is_some().then(|| label.clone()),
+                                speaker: name.unwrap_or(label),
+                                video_paused: pause_at(&meeting.video_pauses, s.start_ms).is_some(),
+                                text: s.text,
+                                frame_id,
+                                words: include_words.then(|| {
+                                    s.words
+                                        .into_iter()
+                                        .map(|w| WordOut {
+                                            start_ms: w.start_ms,
+                                            end_ms: w.end_ms,
+                                            text: w.text,
+                                        })
+                                        .collect()
+                                }),
+                            }
                         })
                         .collect();
                     let page = TranscriptPage {
@@ -550,7 +642,7 @@ impl SakshiMcp {
                         segment_id: h.segment_id,
                         start_ms: h.start_ms,
                         end_ms: h.end_ms,
-                        speaker: h.speaker.to_string(),
+                        speaker: h.speaker_name.unwrap_or_else(|| h.speaker.to_string()),
                         text: h.text,
                     })
                     .collect(),
@@ -587,6 +679,111 @@ impl SakshiMcp {
             Ok(Json(SavedSummary {
                 summary_id: saved.id,
                 created_at: saved.created_at,
+            }))
+        })
+        .await
+        .map_err(|e| format!("Internal error: {e}"))?
+    }
+
+    #[tool(
+        description = "Name a meeting's speakers, e.g. {\"Speaker 1\": \"Priya Sharma\"}, so its transcripts show the names instead of labels. Use only names the user gave you or confirmed; never guess. An empty name removes one. Two labels may share a name when one person was split in two.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn set_speaker_names(
+        &self,
+        Parameters(p): Parameters<SetSpeakerNamesParams>,
+    ) -> Result<Json<SpeakerNamesSaved>, String> {
+        let id = parse_meeting_id(&p.meeting_id)?;
+        if p.names.is_empty() {
+            return Err(
+                "`names` must name at least one speaker, e.g. {\"Speaker 1\": \"Priya\"}.".into(),
+            );
+        }
+        let changes: Vec<(String, Option<String>)> = p
+            .names
+            .into_iter()
+            .map(|(label, name)| (label.trim().to_owned(), Some(name)))
+            .collect();
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let mut writer = SpeakerNameWriter::open(&db).map_err(store_error)?;
+            let names = writer.save(&id, &changes).map_err(store_error)?;
+            let store = Store::open_read_only(&db).map_err(store_error)?;
+            let meeting = find_meeting(&store, &id)?;
+            Ok(Json(SpeakerNamesSaved {
+                speakers: speakers_out(&meeting.speakers, &names),
+            }))
+        })
+        .await
+        .map_err(|e| format!("Internal error: {e}"))?
+    }
+
+    #[tool(
+        description = "Import a recording made elsewhere, such as a Zoom, Teams, or Fireflies recording, or any video or audio file on this computer, so Sakshi transcribes it like its own recordings. Returns the new meeting's id at once; the Sakshi app processes it in the background, a few minutes per hour of audio. get_meeting reports progress until it's ready. The file is copied; the original is left alone.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn import_recording(
+        &self,
+        Parameters(p): Parameters<ImportRecordingParams>,
+    ) -> Result<Json<ImportQueued>, String> {
+        let source = ImportRequest::check_source(&expand_home(p.path.trim())).map_err(|e| {
+            format!("{e}. Pass the absolute path of a video or audio file on this computer.")
+        })?;
+        let title = p
+            .title
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty());
+        if title
+            .as_ref()
+            .is_some_and(|t| t.chars().count() > 200 || t.contains('\n'))
+        {
+            return Err("`title` must be one line of at most 200 characters.".into());
+        }
+        let started_at = p
+            .started_at
+            .as_deref()
+            .map(|s| parse_time(s, "started_at").map(|t| t.to_string()))
+            .transpose()?;
+        let language = p
+            .language
+            .as_deref()
+            .map(|l| l.trim().parse::<Language>().map_err(|e| e.to_string()))
+            .transpose()?;
+        let request = ImportRequest {
+            id: uuid::Uuid::now_v7().to_string(),
+            source,
+            title,
+            started_at,
+            language,
+            requested_at: Timestamp::now().to_string(),
+            state: ImportState::Queued,
+        };
+        let data = Arc::clone(&self.data);
+        tokio::task::spawn_blocking(move || {
+            request
+                .save(&data)
+                .map_err(|e| format!("Couldn't queue the import: {e}"))?;
+            let message = if wake_app() {
+                "Queued. The Sakshi app is importing it in the background; call get_meeting with \
+                 this id to follow it."
+            } else {
+                "Queued. It will be imported when the Sakshi app is open; call get_meeting with \
+                 this id to follow it."
+            };
+            Ok(Json(ImportQueued {
+                meeting_id: request.id,
+                status: "queued".into(),
+                message: message.into(),
             }))
         })
         .await

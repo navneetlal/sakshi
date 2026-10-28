@@ -89,7 +89,12 @@ export interface MeetingItem {
   title: string;
   started_at: string | null;
   duration_ms: number | null;
+  /** Labels ("You", "Speaker N"), in order of first appearance. */
   speakers: string[];
+  /** Names the user gave some of those labels. */
+  speaker_names: Record<string, string>;
+  /** The file a recording made elsewhere was imported from. */
+  imported_from: string | null;
   segment_count: number;
   frame_count: number;
   status: MeetingStatus;
@@ -232,6 +237,11 @@ export const api = {
     invoke<Job>("process_meeting", { id, language, force }),
   setMeetingLanguage: (id: string, language: string | null) =>
     invoke<void>("set_meeting_language", { id, language }),
+  /** A blank name removes one. Returns all the meeting's names. */
+  setSpeakerNames: (id: string, names: Record<string, string>) =>
+    invoke<Record<string, string>>("set_speaker_names", { id, names }),
+  /** Asks for a file; the new meeting's id, or null if cancelled. */
+  importRecording: () => invoke<string | null>("import_recording"),
   revealMeeting: (id: string) => invoke<void>("reveal_meeting", { id }),
   listJobs: () => invoke<Job[]>("list_jobs"),
   listModels: () => invoke<Model[]>("list_models"),

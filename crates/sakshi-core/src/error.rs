@@ -20,6 +20,12 @@ pub enum Error {
     #[error("invalid speaker label {0:?}: expected \"You\" or \"Speaker N\" with N >= 1")]
     InvalidSpeaker(String),
 
+    #[error("invalid speaker name {0:?}: use one line of at most 80 characters")]
+    InvalidSpeakerName(String),
+
+    #[error("can't import: {0}")]
+    InvalidImport(String),
+
     #[error("no platform data directory found; set SAKSHI_DATA_DIR")]
     NoDataDir,
 }

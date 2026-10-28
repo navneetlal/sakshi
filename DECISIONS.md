@@ -281,6 +281,9 @@ considered. Newest entries go at the bottom.
 - **Why:** the spec's rule ("read-only except for summary writes") becomes
   structural instead of a convention, so a bug in a query tool cannot write.
 - **Alternatives:** one read-write connection used carefully.
+- **Since D36 and D37:** the user widened the rule. The server may also
+  name speakers, through `SpeakerNameWriter`, which can do nothing else,
+  and leave an import request in `imports/`. Queries stay read-only.
 
 ## D16. MCP tool behaviour
 
@@ -855,3 +858,84 @@ considered. Newest entries go at the bottom.
   did. A stable signing identity fixes it; not done yet.
 - **Alternatives:** turning the hardened runtime off: works ad hoc, but
   has to come back for notarization.
+
+## D36. Recordings made elsewhere are imported by the app
+
+- **Decision:** a video or audio file from another recorder (Zoom, Teams,
+  Fireflies, ...) becomes a meeting like Sakshi's own:
+  - **Request:** the MCP tool `import_recording`, the Meetings page's
+    Import recording, or `sakshi-cli import` writes
+    `imports/<meeting_id>.json` (`ImportRequest`: source path, optional
+    title, start time, and language, and a state). The id is chosen then,
+    so the MCP client gets it at once.
+  - **Pickup:** the app looks in `imports/` every 2 s and when asked. For
+    each request that hasn't failed it writes `meetings/<id>/meeting.json`
+    (so the meeting is listed while it waits) and queues it with the
+    recordings, one job at a time. The MCP server, run from inside the
+    bundle, starts the app with `open -g` if it isn't running; otherwise
+    the request waits until the app opens. `sakshi-cli import` processes
+    at once instead.
+  - **Copy:** `process_meeting` sees the request and, before the pipeline,
+    copies the file: video and first audio track to `recording.mp4` (the
+    video stream copied, else re-encoded with VideoToolbox or libx264;
+    audio as AAC), then the audio as `system.wav`, last, so its presence
+    means the copy finished. A file with no audio is refused; one with no
+    video gets no `recording.mp4` and no key frames. The container's
+    `creation_time` becomes the start time unless the request gave one.
+    `meeting.json` keeps the file's name as `imported_from`, never its
+    path.
+  - **State:** the request records the step running, so `get_meeting`
+    answers "queued", "processing (step)", or the error until the meeting
+    is indexed, when the request is removed. A failed request stays
+    failed; the app shows the meeting as Failed, and Process retries it.
+  - **Schema 3** adds `meetings.imported_from` (with D37's column).
+- **Why:** the user asked to process existing recordings, sent from MCP,
+  with the app doing the work, from files on this computer only (no
+  downloads, so recording and transcription stay offline). Copying rather
+  than indexing in place (D14) keeps a meeting when the download it came
+  from is deleted. The app's job queue already runs one heavy job at a
+  time and shows progress; the MCP server, which an AI client may stop at
+  any time, only leaves a note.
+- **Verified (macOS 27, 2026-10-28)**, with a development app on a
+  scratch data folder and `sakshi-mcp` driven over stdio:
+  - a Zoom-style MP4 (the AMI fixture's video with both audio tracks
+    mixed, `creation_time` set) imported through `import_recording`: the
+    app took it up within 2 s, `get_meeting` reported `import` then
+    `transcribe-system`, and the meeting came out with 12 segments, 3 key
+    frames at 0, 20, and 40 s, the file's start time, and a playable video.
+    The four voices came out as three speakers: with one mixed track,
+    diarization alone separates them;
+  - an audio-only WAV (the FLEURS Hindi fixture) imported through the
+    Meetings page's file dialog: two speakers, no video, no key frames.
+  - Not seen live: the MCP server starting the bundled app (`open -g`),
+    which needs the installed bundle.
+- **Alternatives:** the MCP server processing the file itself (stops
+  with the client, and runs alongside the app's own jobs); indexing the
+  file in place; accepting download URLs.
+
+## D37. Speaker names are the user's, kept beside the transcript
+
+- **Decision:** `meeting.json` holds `speaker_names`, label to name
+  ("Speaker 1": "Priya"); schema 3 copies them to `meetings.speaker_names`.
+  Transcripts keep their generic labels, so a name can be changed or
+  removed at any time and survives processing the meeting again. Names are
+  one line of at most 80 characters; labels must be the meeting's own;
+  two labels may share a name, to join a person diarization split.
+  - **Setting them:** the meeting page's Name speakers dialog, and the MCP
+    tool `set_speaker_names` (an empty name removes one), through
+    `SpeakerNameWriter`, which writes `meeting.json` first, then the index.
+  - **Showing them:** wherever a speaker shows, the name replaces the
+    label when there is one: the app's speaker list and transcript (the
+    colour still follows the label), `get_transcript` (JSON `speaker`,
+    with `speaker_label` alongside when named; text lines, under a
+    "Named speakers" line), `search_transcripts`, and `get_meeting`, whose
+    `speakers` became `{label, name}` objects.
+  - **The rule for AI clients:** the server instructions say to save a
+    name only when the user gave or confirmed it, and to suggest, not
+    save, what key frames seem to show.
+- **Why:** "Sakshi never guesses names" (the `Speaker` type in
+  `sakshi-core`) still holds: names come only from the user. The user asked for names to replace labels in
+  transcripts, with unnamed speakers left as "Speaker N".
+- **Alternatives:** rewriting `transcript.json` with names (lost on
+  reprocessing, and no way back to the label); names across meetings (the
+  same label in two meetings isn't the same person).

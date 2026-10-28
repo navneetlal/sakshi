@@ -124,6 +124,60 @@ pub struct SaveSummaryParams {
     pub author_model: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetSpeakerNamesParams {
+    /// A meeting id from `list_meetings`.
+    pub meeting_id: String,
+    /// Names by speaker label, e.g. {"Speaker 1": "Priya Sharma"}. Labels
+    /// are the meeting's ("You", "Speaker N"; see `get_meeting`). An empty
+    /// name removes one. Labels left out keep their names.
+    pub names: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ImportRecordingParams {
+    /// Absolute path of a video or audio file on this computer, such as a
+    /// Zoom or Fireflies recording (mp4, mov, m4a, mp3, wav, ...).
+    pub path: String,
+    /// Meeting title; defaults to the file name.
+    #[serde(default)]
+    #[schemars(with = "String")]
+    pub title: Option<String>,
+    /// When the meeting started: RFC 3339 (e.g. "2026-10-27T10:00:00+05:30")
+    /// or a UTC date. Defaults to the time stored in the file, if any.
+    #[serde(default)]
+    #[schemars(with = "String")]
+    pub started_at: Option<String>,
+    /// Language spoken: "auto" (default) or a code such as "en" or "hi".
+    #[serde(default)]
+    #[schemars(with = "String")]
+    pub language: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ImportQueued {
+    /// The id the meeting will have; use it with `get_meeting`.
+    pub meeting_id: String,
+    pub status: String,
+    pub message: String,
+}
+
+/// A speaker in a meeting.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SpeakerOut {
+    /// "You" or "Speaker N".
+    pub label: String,
+    /// The name the user gave this speaker; absent when not named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SpeakerNamesSaved {
+    pub speakers: Vec<SpeakerOut>,
+}
+
 /// A meeting as listed.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct MeetingOut {
@@ -136,8 +190,13 @@ pub struct MeetingOut {
     /// RFC 3339 time Sakshi last processed the meeting.
     pub processed_at: String,
     pub duration_ms: u64,
-    /// "You" and "Speaker N" labels in order of first appearance.
-    pub speakers: Vec<String>,
+    /// Speakers in order of first appearance, with any names the user gave
+    /// them.
+    pub speakers: Vec<SpeakerOut>,
+    /// For a recording made elsewhere and imported, the file it came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
+    pub imported_from: Option<String>,
     /// Languages the recognizer reported, if any.
     pub languages: Vec<String>,
     pub segment_count: u32,
@@ -198,8 +257,12 @@ pub struct SegmentOut {
     pub end_ms: u64,
     /// "mic" (the user) or "system" (everyone else).
     pub track: String,
-    /// "You" or "Speaker N".
+    /// The speaker's name if the user named them, else "You" or "Speaker N".
     pub speaker: String,
+    /// The speaker's label ("You" or "Speaker N") when `speaker` is a name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
+    pub speaker_label: Option<String>,
     pub text: String,
     /// The key frame on screen when the segment started (pass it to
     /// `get_frame_at` as `at_ms`); absent when the meeting has no video.
@@ -239,6 +302,7 @@ pub struct SearchHitOut {
     pub segment_id: u32,
     pub start_ms: u64,
     pub end_ms: u64,
+    /// The speaker's name if the user named them, else their label.
     pub speaker: String,
     pub text: String,
 }

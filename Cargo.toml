@@ -68,6 +68,7 @@ objc2-screen-capture-kit = "0.3.2"
 # Desktop app. The asset protocol serves key frames and recordings to the UI.
 tauri = { version = "2.12.5", features = ["protocol-asset"] }
 tauri-build = "2.7.4"
+tauri-plugin-dialog = "2.8.4"
 tauri-plugin-notification = "2.7.0"
 tauri-plugin-opener = "2.7.2"
 

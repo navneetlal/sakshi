@@ -4,12 +4,12 @@ use std::time::Duration;
 use jiff::{Timestamp, Unit};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
 use sakshi_core::{
-    Frame, MeetingDir, MeetingInfo, Segment, Speaker, Summary, Track, Transcript, VideoPause, Word,
-    read_json, write_json_atomic,
+    Frame, MeetingDir, MeetingInfo, Segment, Speaker, SpeakerNames, Summary, Track, Transcript,
+    VideoPause, Word, read_json, write_json_atomic,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{StoreError, schema, summaries};
+use crate::{StoreError, schema, speakers, summaries};
 
 /// A processed meeting as listed by the index.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -25,12 +25,16 @@ pub struct MeetingRecord {
     pub languages: Vec<String>,
     /// Speaker labels in order of first appearance.
     pub speakers: Vec<String>,
+    /// Names the user gave some of those labels.
+    pub speaker_names: SpeakerNames,
     pub segment_count: u32,
     pub frame_count: u32,
     /// Where the recorded window's video paused because the window was out
     /// of view, in time order; empty for a display or a recording made
     /// elsewhere.
     pub video_pauses: Vec<VideoPause>,
+    /// The file name a recording made elsewhere was imported from.
+    pub imported_from: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -70,6 +74,8 @@ pub struct SearchHit {
     pub end_ms: u64,
     pub track: Track,
     pub speaker: Speaker,
+    /// The name the user gave `speaker` in this meeting, if any.
+    pub speaker_name: Option<String>,
     pub text: String,
 }
 
@@ -133,8 +139,33 @@ pub(crate) fn upgrade_if_outdated(conn: &Connection, path: &Path) -> Result<bool
     }
 }
 
+/// Opens an existing database read-write for one of the narrow writers,
+/// never creating one. One written by an older Sakshi is upgraded first,
+/// as for reading.
+pub(crate) fn open_existing(path: &Path) -> Result<Connection, StoreError> {
+    if !path.exists() {
+        return Err(StoreError::NoDatabase {
+            path: path.to_path_buf(),
+        });
+    }
+    let connect = || -> Result<Connection, StoreError> {
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        configure(&conn)?;
+        Ok(conn)
+    };
+    let mut conn = connect()?;
+    if upgrade_if_outdated(&conn, path)? {
+        conn = connect()?;
+    }
+    check_version(&conn)?;
+    Ok(conn)
+}
+
 const MEETING_COLUMNS: &str = "id, title, folder, started_at, indexed_at, duration_ms, \
-     languages, speakers, segment_count, frame_count, video_pauses";
+     languages, speakers, segment_count, frame_count, video_pauses, speaker_names, imported_from";
 
 fn meeting_from_row(row: &Row<'_>) -> rusqlite::Result<MeetingRecord> {
     let list = |i: usize| -> rusqlite::Result<Vec<String>> {
@@ -152,6 +183,8 @@ fn meeting_from_row(row: &Row<'_>) -> rusqlite::Result<MeetingRecord> {
         segment_count: row.get(8)?,
         frame_count: row.get(9)?,
         video_pauses: serde_json::from_str(&row.get::<_, String>(10)?).unwrap_or_default(),
+        speaker_names: serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default(),
+        imported_from: row.get(12)?,
     })
 }
 
@@ -332,9 +365,11 @@ impl Store {
             duration_ms: transcript.duration_ms,
             languages: transcript.languages.clone(),
             speakers,
+            speaker_names: info.speaker_names.clone(),
             segment_count: u32::try_from(transcript.segments.len()).unwrap_or(u32::MAX),
             frame_count: u32::try_from(frames.len()).unwrap_or(u32::MAX),
             video_pauses: video_pauses(dir),
+            imported_from: info.imported_from.clone(),
         };
 
         let tx = self.conn.transaction()?;
@@ -345,14 +380,16 @@ impl Store {
         tx.execute(
             "INSERT INTO meetings (id, title, folder, started_at, indexed_at, duration_ms,
                                    languages, speakers, segment_count, frame_count,
-                                   video_pauses)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                                   video_pauses, speaker_names, imported_from)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT (id) DO UPDATE SET
                 title = excluded.title, folder = excluded.folder,
                 started_at = excluded.started_at, indexed_at = excluded.indexed_at,
                 duration_ms = excluded.duration_ms, languages = excluded.languages,
                 speakers = excluded.speakers, segment_count = excluded.segment_count,
-                frame_count = excluded.frame_count, video_pauses = excluded.video_pauses",
+                frame_count = excluded.frame_count, video_pauses = excluded.video_pauses,
+                speaker_names = excluded.speaker_names,
+                imported_from = excluded.imported_from",
             params![
                 record.id,
                 record.title,
@@ -365,6 +402,8 @@ impl Store {
                 record.segment_count,
                 record.frame_count,
                 serde_json::to_string(&record.video_pauses).expect("pauses serialize"),
+                serde_json::to_string(&record.speaker_names).expect("names serialize"),
+                record.imported_from,
             ],
         )?;
         for table in ["segments", "frames", "segment_search"] {
@@ -458,6 +497,16 @@ impl Store {
             .ok_or_else(|| StoreError::UnknownMeeting(id.to_owned()))
     }
 
+    /// Names speakers, as [`SpeakerNameWriter::save`](crate::SpeakerNameWriter::save)
+    /// does, on a store opened read-write.
+    pub fn set_speaker_names(
+        &mut self,
+        meeting_id: &str,
+        changes: &[(String, Option<String>)],
+    ) -> Result<SpeakerNames, StoreError> {
+        speakers::save(&self.conn, meeting_id, changes)
+    }
+
     /// Segments overlapping `range` with an id above `after`, in id (and so
     /// time) order.
     pub fn segments(
@@ -545,7 +594,7 @@ impl Store {
         let (sql, arg) = match trigram_phrase(text) {
             Some(phrase) => (
                 "SELECT s.meeting_id, m.title, m.started_at, s.id, s.start_ms, s.end_ms,
-                        s.track, s.speaker, s.text
+                        s.track, s.speaker, s.text, m.speaker_names
                  FROM segment_search f
                  JOIN segments s ON s.meeting_id = f.meeting_id AND s.id = f.segment_id
                  JOIN meetings m ON m.id = s.meeting_id
@@ -555,7 +604,7 @@ impl Store {
             ),
             None => (
                 "SELECT s.meeting_id, m.title, m.started_at, s.id, s.start_ms, s.end_ms,
-                        s.track, s.speaker, s.text
+                        s.track, s.speaker, s.text, m.speaker_names
                  FROM segments s JOIN meetings m ON m.id = s.meeting_id
                  WHERE s.text LIKE ?1 ESCAPE '\\'
                  ORDER BY COALESCE(m.started_at, m.indexed_at) DESC, s.start_ms LIMIT ?2",
@@ -564,6 +613,9 @@ impl Store {
         };
         let mut stmt = self.conn.prepare(sql)?;
         let rows = stmt.query_map(params![arg, limit], |row| {
+            let label: String = row.get(7)?;
+            let names: SpeakerNames =
+                serde_json::from_str(&row.get::<_, String>(9)?).unwrap_or_default();
             Ok(SearchHit {
                 meeting_id: row.get(0)?,
                 meeting_title: row.get(1)?,
@@ -572,7 +624,8 @@ impl Store {
                 start_ms: from_sql(row.get(4)?),
                 end_ms: from_sql(row.get(5)?),
                 track: parse_track(&row.get::<_, String>(6)?),
-                speaker: parse_speaker(&row.get::<_, String>(7)?),
+                speaker: parse_speaker(&label),
+                speaker_name: names.get(&label).map(str::to_owned),
                 text: row.get(8)?,
             })
         })?;

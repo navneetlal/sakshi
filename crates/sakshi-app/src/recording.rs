@@ -21,7 +21,7 @@ pub fn create_meeting(
         id: Some(id),
         title: Some(title),
         started_at: Some(jiff::Timestamp::now().to_string()),
-        language: None,
+        ..MeetingInfo::default()
     };
     write_json_atomic(&meeting.info_json(), &info)?;
     Ok((meeting, info))

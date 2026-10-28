@@ -68,6 +68,13 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE meetings ADD COLUMN video_pauses TEXT NOT NULL DEFAULT '[]';
     "#,
+    // 3: names the user gave speakers (a JSON object from label to name),
+    // and the file an imported recording came from, both copied from the
+    // meeting's `meeting.json`.
+    r#"
+    ALTER TABLE meetings ADD COLUMN speaker_names TEXT NOT NULL DEFAULT '{}';
+    ALTER TABLE meetings ADD COLUMN imported_from TEXT;
+    "#,
 ];
 
 pub(crate) const VERSION: i64 = MIGRATIONS.len() as i64;

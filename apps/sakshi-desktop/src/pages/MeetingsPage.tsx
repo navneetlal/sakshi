@@ -53,9 +53,21 @@ export function MeetingsPage({
     };
   }, [query, meetingsVersion, jobStates]);
 
+  const importRecording = async () => {
+    try {
+      const id = await api.importRecording();
+      if (id) onSelect(id);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
   return (
     <div className="split">
       <aside className="list-pane">
+        <button className="btn import" onClick={() => void importRecording()}>
+          Import recording…
+        </button>
         <input
           className="search"
           type="search"
@@ -66,7 +78,9 @@ export function MeetingsPage({
         <ErrorNotice error={error} />
         {items && items.length === 0 && (
           <p className="muted empty">
-            {query ? "Nothing matches." : "No meetings yet. Record one on the Record page."}
+            {query
+              ? "Nothing matches."
+              : "No meetings yet. Record one on the Record page, or import a recording."}
           </p>
         )}
         <ul className="meeting-list">
@@ -112,6 +126,7 @@ function MeetingView({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("transcript");
   const [processOpen, setProcessOpen] = useState(false);
+  const [namesOpen, setNamesOpen] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
 
   // The newest job for this meeting, live from events.
@@ -146,6 +161,9 @@ function MeetingView({ id }: { id: string }) {
   };
   const active = job && (job.state === "queued" || job.state === "running");
   const processed = meeting.segment_count > 0 || meeting.status === "processed";
+  // The name the user gave a label, else the label; colours follow labels.
+  const nameOf = (label: string) => meeting.speaker_names[label] ?? label;
+  const labelHint = (label: string) => (label in meeting.speaker_names ? label : undefined);
 
   return (
     <article className="meeting">
@@ -156,12 +174,13 @@ function MeetingView({ id }: { id: string }) {
             {when(meeting.started_at)}
             {meeting.duration_ms ? ` · ${duration(meeting.duration_ms)}` : ""}
             {meeting.languages.length > 0 && ` · ${meeting.languages.map(languageLabel).join(", ")}`}
+            {meeting.imported_from && ` · imported from ${meeting.imported_from}`}
           </p>
           {meeting.speakers.length > 0 && (
             <div className="speakers">
               {meeting.speakers.map((s) => (
-                <span key={s} className={speakerClass(s)}>
-                  {s}
+                <span key={s} className={speakerClass(s)} title={labelHint(s)}>
+                  {nameOf(s)}
                 </span>
               ))}
             </div>
@@ -169,6 +188,11 @@ function MeetingView({ id }: { id: string }) {
         </div>
         <div className="header-actions">
           <MeetingStatusBadge status={meeting.status} />
+          {meeting.speakers.length > 0 && (
+            <button className="btn" onClick={() => setNamesOpen(true)}>
+              Name speakers…
+            </button>
+          )}
           <button className="btn" onClick={() => void api.revealMeeting(meeting.id)}>
             Show in Finder
           </button>
@@ -225,7 +249,9 @@ function MeetingView({ id }: { id: string }) {
                   >
                     {timestamp(s.start_ms)}
                   </button>
-                  <span className={speakerClass(s.speaker)}>{s.speaker}</span>
+                  <span className={speakerClass(s.speaker)} title={labelHint(s.speaker)}>
+                    {nameOf(s.speaker)}
+                  </span>
                   <p>{s.text}</p>
                 </li>
               ))}
@@ -283,7 +309,70 @@ function MeetingView({ id }: { id: string }) {
           onError={setError}
         />
       )}
+      {namesOpen && (
+        <SpeakerNamesDialog
+          meeting={meeting}
+          onClose={() => setNamesOpen(false)}
+          onError={setError}
+        />
+      )}
     </article>
+  );
+}
+
+function SpeakerNamesDialog({
+  meeting,
+  onClose,
+  onError,
+}: {
+  meeting: MeetingDetail;
+  onClose: () => void;
+  onError: (error: string) => void;
+}) {
+  const [names, setNames] = useState<Record<string, string>>(() =>
+    Object.fromEntries(meeting.speakers.map((s) => [s, meeting.speaker_names[s] ?? ""])),
+  );
+
+  const save = async () => {
+    try {
+      await api.setSpeakerNames(meeting.id, names);
+    } catch (e) {
+      onError(errorText(e));
+    }
+    onClose();
+  };
+
+  return (
+    <Dialog
+      title="Name speakers"
+      onClose={onClose}
+      actions={
+        <>
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={() => void save()}>
+            Save
+          </button>
+        </>
+      }
+    >
+      <p className="muted small">
+        Names replace the labels in the transcript, here and for your AI client. Leave a name blank
+        to show the label. If one person shows up as two speakers, give both the same name.
+      </p>
+      {meeting.speakers.map((label) => (
+        <label key={label} className="field">
+          <span className={speakerClass(label)}>{label}</span>
+          <input
+            value={names[label] ?? ""}
+            maxLength={80}
+            placeholder={label}
+            onChange={(e) => setNames({ ...names, [label]: e.target.value })}
+          />
+        </label>
+      ))}
+    </Dialog>
   );
 }
 

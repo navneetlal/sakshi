@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use sakshi_asr::{NemoSpeech, locate_sidecar};
-use sakshi_core::{DataDir, Language, MeetingDir};
+use sakshi_core::{DataDir, ImportRequest, ImportState, Language, MeetingDir};
 use sakshi_media::Ffmpeg;
 use sakshi_models::{ModelStore, Role};
 use sakshi_pipeline::{
@@ -10,6 +10,7 @@ use sakshi_pipeline::{
 use sakshi_store::{MeetingRecord, Store};
 use serde::Serialize;
 
+use crate::import::import_media;
 use crate::{AppError, resolve_language};
 
 #[derive(Debug, Clone)]
@@ -43,6 +44,8 @@ impl Default for ProcessOptions {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Progress {
+    /// Copying a recording made elsewhere into the meeting folder.
+    Importing,
     /// Turning an unfinished capture into recording.mp4 and the WAVs.
     Finalizing,
     Stage {
@@ -72,10 +75,66 @@ fn model_path(store: &ModelStore, id: Option<&str>, role: Role) -> Result<PathBu
     Ok(store.require(&entry)?)
 }
 
-/// Processes a meeting folder end to end: finishes an interrupted capture,
-/// runs the pipeline (resuming finished stages), and indexes the result so
-/// the MCP server can see it.
+/// Processes a meeting folder end to end: imports a recording made
+/// elsewhere or finishes an interrupted capture, runs the pipeline
+/// (resuming finished stages), and indexes the result so the MCP server can
+/// see it.
+///
+/// For an import, the request's state follows along for the MCP server: the
+/// step running, then removed once indexed, or the error.
 pub fn process_meeting(
+    data: &DataDir,
+    folder: &Path,
+    options: &ProcessOptions,
+    progress: &(dyn Fn(Progress) + Send + Sync),
+) -> Result<ProcessOutcome, AppError> {
+    let request = match folder.file_name().and_then(|n| n.to_str()) {
+        Some(id) => ImportRequest::load(data, id)?,
+        None => None,
+    };
+    let Some(request) = request else {
+        return process_folder(data, folder, options, progress);
+    };
+    let set_state = |state: ImportState| {
+        let request = ImportRequest {
+            state,
+            ..request.clone()
+        };
+        if let Err(e) = request.save(data) {
+            tracing::warn!(id = %request.id, "updating the import request: {e}");
+        }
+    };
+    let result = (|| {
+        if !MeetingDir::new(folder).system_wav().exists() {
+            progress(Progress::Importing);
+            set_state(ImportState::Processing {
+                step: "import".into(),
+            });
+            import_media(data, &request, &Ffmpeg::locate()?)?;
+        }
+        let observed = |p: Progress| {
+            if let Progress::Stage {
+                event: StageEvent::Started { stage },
+            } = &p
+            {
+                set_state(ImportState::Processing {
+                    step: stage.as_str().into(),
+                });
+            }
+            progress(p);
+        };
+        process_folder(data, folder, options, &observed)
+    })();
+    match &result {
+        Ok(_) => ImportRequest::remove(data, &request.id)?,
+        Err(e) => set_state(ImportState::Failed {
+            error: e.to_string(),
+        }),
+    }
+    result
+}
+
+fn process_folder(
     data: &DataDir,
     folder: &Path,
     options: &ProcessOptions,

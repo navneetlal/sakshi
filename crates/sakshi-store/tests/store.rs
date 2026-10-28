@@ -4,7 +4,7 @@ use sakshi_core::{
     Frame, MeetingDir, MeetingInfo, Segment, Speaker, Track, Transcript, VideoPause, WindowView,
     Word, read_json, write_json_atomic,
 };
-use sakshi_store::{MeetingQuery, Store, StoreError, SummaryWriter, TimeRange};
+use sakshi_store::{MeetingQuery, SpeakerNameWriter, Store, StoreError, SummaryWriter, TimeRange};
 
 fn segment(id: u32, start_ms: u64, track: Track, speaker: Speaker, text: &str) -> Segment {
     let words: Vec<Word> = text
@@ -183,6 +183,71 @@ fn indexes_a_meeting_and_assigns_a_stable_id() {
             .len(),
         4
     );
+}
+
+#[test]
+fn names_speakers_in_meeting_json_and_the_index() {
+    let mut f = Fixture::new();
+    let m = meeting(&f.dir("standup"), Some("Standup"), None, english());
+    let id = f.store.index_meeting(&m).unwrap().id;
+    let change = |label: &str, name: Option<&str>| (label.to_owned(), name.map(str::to_owned));
+
+    let names = f
+        .store
+        .set_speaker_names(
+            &id,
+            &[
+                change("Speaker 1", Some("Priya")),
+                change("You", Some("Navneet")),
+            ],
+        )
+        .unwrap();
+    assert_eq!(names.display("Speaker 1"), "Priya");
+    let info: MeetingInfo = read_json(&m.info_json()).unwrap();
+    assert_eq!(info.speaker_names, names, "meeting.json is the truth");
+    assert_eq!(
+        info.title.as_deref(),
+        Some("Standup"),
+        "the rest of meeting.json is kept"
+    );
+
+    // The MCP server's writer, against the same database; a blank name
+    // removes one.
+    let mut writer = SpeakerNameWriter::open(&f.db()).unwrap();
+    let names = writer
+        .save(
+            &id,
+            &[change("Speaker 2", Some("Priya")), change("You", Some(" "))],
+        )
+        .unwrap();
+    assert_eq!(
+        names.iter().collect::<Vec<_>>(),
+        [("Speaker 1", "Priya"), ("Speaker 2", "Priya")]
+    );
+    let ro = Store::open_read_only(&f.db()).unwrap();
+    assert_eq!(ro.require_meeting(&id).unwrap().speaker_names, names);
+
+    // Only the meeting's own labels, and sensible names.
+    let err = writer
+        .save(&id, &[change("Speaker 7", Some("Ravi"))])
+        .unwrap_err();
+    assert!(matches!(err, StoreError::UnknownSpeaker { .. }), "{err}");
+    assert!(
+        err.to_string().contains("Speaker 1, You, Speaker 2"),
+        "{err}"
+    );
+    let err = writer
+        .save(&id, &[change("Speaker 1", Some("a\nb"))])
+        .unwrap_err();
+    assert!(err.to_string().contains("invalid speaker name"), "{err}");
+    assert!(matches!(
+        writer.save("nope", &[]).unwrap_err(),
+        StoreError::UnknownMeeting(_)
+    ));
+
+    // Processing the meeting again keeps the names.
+    let again = f.store.index_meeting(&m).unwrap();
+    assert_eq!(again.speaker_names, names);
 }
 
 #[test]

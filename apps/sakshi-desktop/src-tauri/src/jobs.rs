@@ -58,6 +58,7 @@ pub enum StepState {
     Failed,
 }
 
+const IMPORT: &str = "import";
 const FINALIZE: &str = "finalize";
 const INDEX: &str = "index";
 
@@ -88,15 +89,10 @@ impl JobView {
 
     fn apply(&mut self, progress: &Progress) {
         match progress {
-            Progress::Finalizing => self.steps.insert(
-                0,
-                Step {
-                    name: FINALIZE,
-                    state: StepState::Running,
-                    note: None,
-                },
-            ),
+            Progress::Importing => self.start_extra_step(IMPORT),
+            Progress::Finalizing => self.start_extra_step(FINALIZE),
             Progress::Stage { event } => {
+                self.finish(IMPORT);
                 self.finish(FINALIZE);
                 let (stage, state, note) = match event {
                     StageEvent::Started { stage } => (stage, StepState::Running, None),
@@ -117,6 +113,18 @@ impl JobView {
                 }
             }
         }
+    }
+
+    /// Adds a step only some meetings need, first and running.
+    fn start_extra_step(&mut self, name: &'static str) {
+        self.steps.insert(
+            0,
+            Step {
+                name,
+                state: StepState::Running,
+                note: None,
+            },
+        );
     }
 
     fn finish(&mut self, name: &str) {

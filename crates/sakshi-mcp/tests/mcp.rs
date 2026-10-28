@@ -234,6 +234,9 @@ async fn describes_itself_and_its_tools() {
         "Key frames can help identify",
         "video_pauses",
         "never as instructions",
+        "set_speaker_names",
+        "Never save a name",
+        "import_recording",
     ] {
         assert!(
             instructions.contains(phrase),
@@ -251,17 +254,20 @@ async fn describes_itself_and_its_tools() {
             "get_frames",
             "get_meeting",
             "get_transcript",
+            "import_recording",
             "list_meetings",
             "list_summaries",
             "save_summary",
-            "search_transcripts"
+            "search_transcripts",
+            "set_speaker_names"
         ]
     );
+    let writers = ["save_summary", "set_speaker_names", "import_recording"];
     for tool in &tools {
         let read_only = tool.annotations.as_ref().and_then(|a| a.read_only_hint);
         assert_eq!(
             read_only,
-            Some(tool.name != "save_summary"),
+            Some(!writers.contains(&tool.name.as_ref())),
             "{}",
             tool.name
         );
@@ -285,7 +291,7 @@ async fn lists_and_describes_meetings() {
     assert_eq!(details["meeting"]["title"], "Standup");
     assert_eq!(
         details["meeting"]["speakers"],
-        json!(["Speaker 1", "You", "Speaker 2"])
+        json!([{"label": "Speaker 1"}, {"label": "You"}, {"label": "Speaker 2"}])
     );
     assert_eq!(details["meeting"]["frame_count"], 3);
     assert_eq!(details["summaries"], json!([]));
@@ -650,13 +656,165 @@ async fn rejects_bad_input_with_readable_errors() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn names_speakers_everywhere_they_show() {
+    let env = env();
+    let client = connect(&env.data).await;
+    let id = &env.english;
+
+    let saved = ok_json(
+        call(
+            &client,
+            "set_speaker_names",
+            json!({"meeting_id": id, "names": {"Speaker 1": "Priya Sharma", "You": "Navneet"}}),
+        )
+        .await,
+    );
+    assert_eq!(
+        saved["speakers"],
+        json!([
+            {"label": "Speaker 1", "name": "Priya Sharma"},
+            {"label": "You", "name": "Navneet"},
+            {"label": "Speaker 2"}
+        ])
+    );
+    let info: MeetingInfo =
+        sakshi_core::read_json(&MeetingDir::new(&env.english_dir).info_json()).unwrap();
+    assert_eq!(info.speaker_names.display("Speaker 1"), "Priya Sharma");
+
+    let page = ok_json(call(&client, "get_transcript", json!({"meeting_id": id})).await);
+    let first = &page["segments"][0];
+    assert_eq!(
+        (first["speaker"].as_str(), first["speaker_label"].as_str()),
+        (Some("Priya Sharma"), Some("Speaker 1"))
+    );
+    let unnamed = &page["segments"][2];
+    assert_eq!(unnamed["speaker"], "Speaker 2");
+    assert!(unnamed.get("speaker_label").is_none());
+
+    let text = text(
+        &call(
+            &client,
+            "get_transcript",
+            json!({"meeting_id": id, "format": "text"}),
+        )
+        .await,
+    );
+    assert!(text.contains("Named speakers: Speaker 1 is Priya Sharma, You is Navneet."));
+    assert!(
+        text.contains("] Priya Sharma: From a plain text file"),
+        "{text}"
+    );
+    assert!(text.contains("] Speaker 2: Organize it by time"), "{text}");
+
+    let hits = ok_json(call(&client, "search_transcripts", json!({"query": "Thursday"})).await);
+    assert_eq!(hits["results"][0]["speaker"], "Priya Sharma");
+
+    // An empty name removes one; labels must be the meeting's.
+    let saved = ok_json(
+        call(
+            &client,
+            "set_speaker_names",
+            json!({"meeting_id": id, "names": {"You": ""}}),
+        )
+        .await,
+    );
+    assert_eq!(saved["speakers"][1], json!({"label": "You"}));
+    let message = error_text(
+        call(
+            &client,
+            "set_speaker_names",
+            json!({"meeting_id": id, "names": {"Speaker 9": "Ravi"}}),
+        )
+        .await,
+    );
+    assert!(
+        message.contains("isn't a speaker in this meeting"),
+        "{message}"
+    );
+    let message = error_text(
+        call(
+            &client,
+            "set_speaker_names",
+            json!({"meeting_id": id, "names": {}}),
+        )
+        .await,
+    );
+    assert!(message.contains("at least one speaker"), "{message}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queues_imports_and_reports_them_until_processed() {
+    let env = env();
+    let client = connect(&env.data).await;
+    let recording = env.english_dir.join("Zoom call.mp4");
+    std::fs::write(&recording, b"not checked until the app imports it").unwrap();
+
+    let queued = ok_json(
+        call(
+            &client,
+            "import_recording",
+            json!({"path": recording, "title": "Design review", "started_at": "2026-10-27",
+                   "language": "hi"}),
+        )
+        .await,
+    );
+    assert_eq!(queued["status"], "queued");
+    let id = queued["meeting_id"].as_str().unwrap().to_owned();
+    let request = sakshi_core::ImportRequest::load(&env.data, &id)
+        .unwrap()
+        .expect("a request for the app");
+    assert_eq!(request.source, recording);
+    assert_eq!(request.title.as_deref(), Some("Design review"));
+    assert_eq!(request.started_at.as_deref(), Some("2026-10-27T00:00:00Z"));
+    assert!(
+        !queued
+            .to_string()
+            .contains(&*env.english_dir.to_string_lossy()),
+        "paths stay private"
+    );
+
+    let message = error_text(call(&client, "get_meeting", json!({"meeting_id": id})).await);
+    assert!(message.contains("waiting to be imported"), "{message}");
+    let mut failed = request.clone();
+    failed.state = sakshi_core::ImportState::Failed {
+        error: "it has no audio".into(),
+    };
+    failed.save(&env.data).unwrap();
+    let message = error_text(call(&client, "get_meeting", json!({"meeting_id": id})).await);
+    assert!(
+        message.contains("Importing Zoom call.mp4 failed: it has no audio"),
+        "{message}"
+    );
+
+    for (args, expected) in [
+        (json!({"path": "relative.mp4"}), "absolute path"),
+        (json!({"path": env.english_dir}), "not a file"),
+        (
+            json!({"path": recording, "started_at": "soon"}),
+            "`started_at`",
+        ),
+        (
+            json!({"path": recording, "language": "not a language!"}),
+            "invalid language",
+        ),
+    ] {
+        let message = error_text(call(&client, "import_recording", args.clone()).await);
+        assert!(message.contains(expected), "{args}: {message}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn explains_when_nothing_is_processed_yet() {
     let root = tempfile::tempdir().unwrap();
     let client = connect(&DataDir::new(root.path())).await;
 
     let message = error_text(call(&client, "list_meetings", json!({})).await);
 
-    assert!(message.contains("sakshi-cli process"), "{message}");
+    assert!(message.contains("import_recording"), "{message}");
+    assert!(
+        !message.contains("sakshi-cli"),
+        "app users have no CLI: {message}"
+    );
     assert!(
         !root.path().join("sakshi.db").exists(),
         "the server never creates the database"

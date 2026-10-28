@@ -158,6 +158,66 @@ impl Ffmpeg {
         }
         std::fs::rename(&tmp, output).map_err(|e| MediaError::io(output, e))
     }
+
+    /// What a media file holds, from the stream listing ffmpeg prints for
+    /// an input. Fails if ffmpeg can't read it as media.
+    pub fn probe(&self, input: &Path) -> Result<MediaInfo, MediaError> {
+        let out = Command::new(&self.path)
+            .args(["-hide_banner", "-nostdin", "-i"])
+            .arg(input)
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|source| MediaError::Spawn {
+                path: self.path.clone(),
+                source,
+            })?;
+        // Without an output file ffmpeg always exits with an error; the
+        // listing is on stderr either way.
+        let listing = String::from_utf8_lossy(&out.stderr);
+        if !listing
+            .lines()
+            .any(|l| l.trim_start().starts_with("Stream #"))
+        {
+            return Err(MediaError::FfmpegFailed {
+                input: input.to_path_buf(),
+                status: "reading it as audio or video".into(),
+                stderr: listing.trim().to_owned(),
+            });
+        }
+        Ok(MediaInfo::parse(&listing))
+    }
+}
+
+/// What [`Ffmpeg::probe`] found in a file.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MediaInfo {
+    /// A video stream other than cover art.
+    pub has_video: bool,
+    pub has_audio: bool,
+    /// The container's `creation_time` as written, usually RFC 3339.
+    pub creation_time: Option<String>,
+}
+
+impl MediaInfo {
+    fn parse(listing: &str) -> Self {
+        let mut info = Self::default();
+        for line in listing.lines().map(str::trim) {
+            if line.starts_with("Stream #") {
+                info.has_video |= line.contains(": Video:") && !line.contains("(attached pic)");
+                info.has_audio |= line.contains(": Audio:");
+            } else if info.creation_time.is_none()
+                && let Some(value) = line.strip_prefix("creation_time")
+            {
+                // The first one is the container's; streams list their own.
+                info.creation_time = value
+                    .trim_start()
+                    .strip_prefix(':')
+                    .map(|v| v.trim().to_owned())
+                    .filter(|v| !v.is_empty());
+            }
+        }
+        info
+    }
 }
 
 /// The first `ffmpeg` next to the executable, on `path_var`, or in
@@ -284,5 +344,69 @@ pub(crate) mod tests {
 
         assert!(matches!(err, MediaError::FfmpegFailed { .. }), "{err}");
         assert!(!dir.path().join("out.wav").exists());
+        let err = ffmpeg().probe(&input).unwrap_err();
+        assert!(matches!(err, MediaError::FfmpegFailed { .. }), "{err}");
+    }
+
+    #[test]
+    fn parses_the_stream_listing() {
+        let zoom = "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'GMT20261020-040000_Recording.mp4':
+  Metadata:
+    major_brand     : mp42
+    creation_time   : 2026-10-20T04:00:00.000000Z
+  Duration: 00:42:10.05, start: 0.000000, bitrate: 512 kb/s
+  Stream #0:0[0x1](und): Audio: aac (LC) (mp4a / 0x6134706D), 32000 Hz, mono, fltp, 64 kb/s (default)
+      Metadata:
+        creation_time   : 2026-10-20T04:01:00.000000Z
+  Stream #0:1[0x2](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p, 1920x1080, 25 fps";
+        assert_eq!(
+            MediaInfo::parse(zoom),
+            MediaInfo {
+                has_video: true,
+                has_audio: true,
+                creation_time: Some("2026-10-20T04:00:00.000000Z".into()),
+            }
+        );
+        let podcast = "Input #0, mp3, from 'call.mp3':
+  Stream #0:0: Audio: mp3 (mp3float), 44100 Hz, stereo, fltp, 128 kb/s
+  Stream #0:1: Video: mjpeg (Baseline), yuvj420p, 600x600, 90k tbr (attached pic)";
+        assert_eq!(
+            MediaInfo::parse(podcast),
+            MediaInfo {
+                has_audio: true,
+                ..MediaInfo::default()
+            }
+        );
+    }
+
+    #[test]
+    fn probes_real_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let video = dir.path().join("call.mp4");
+        let status = ffmpeg()
+            .command()
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=160x120:rate=5:duration=1",
+            ])
+            .args(["-f", "lavfi", "-i", "sine=duration=1"])
+            .args([
+                "-metadata",
+                "creation_time=2026-10-20T04:00:00Z",
+                "-shortest",
+            ])
+            .arg(&video)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let info = ffmpeg().probe(&video).unwrap();
+        assert!(info.has_video && info.has_audio, "{info:?}");
+        assert!(
+            info.creation_time
+                .unwrap()
+                .starts_with("2026-10-20T04:00:00")
+        );
     }
 }

@@ -13,6 +13,7 @@ pub const DATA_DIR_ENV: &str = "SAKSHI_DATA_DIR";
 ///   config.json
 ///   models/
 ///   meetings/<meeting_id>/
+///   imports/<meeting_id>.json   (recordings waiting to be imported)
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataDir {
@@ -58,6 +59,15 @@ impl DataDir {
 
     pub fn meeting(&self, meeting_id: &str) -> MeetingDir {
         MeetingDir::new(self.meetings_dir().join(meeting_id))
+    }
+
+    /// Requests to import recordings made elsewhere, one file each.
+    pub fn imports_dir(&self) -> PathBuf {
+        self.root.join("imports")
+    }
+
+    pub fn import_request(&self, meeting_id: &str) -> PathBuf {
+        self.imports_dir().join(format!("{meeting_id}.json"))
     }
 }
 

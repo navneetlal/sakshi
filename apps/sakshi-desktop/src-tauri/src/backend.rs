@@ -11,13 +11,16 @@ use sakshi_app::mcp_setup::{
 };
 use sakshi_app::{ProcessOptions, check_language, load_settings, save_settings};
 use sakshi_capture::{PermissionState, Source};
-use sakshi_core::{DataDir, Language, MeetingDir, MeetingInfo, Speaker, Summary, Track, read_json};
+use sakshi_core::{
+    DataDir, ImportRequest, ImportState, Language, MeetingDir, MeetingInfo, Speaker, SpeakerNames,
+    Summary, Track, read_json,
+};
 use sakshi_media::{Ffmpeg, MIN_FFMPEG};
 use sakshi_models::{ModelStore, Role};
 use sakshi_store::{MeetingQuery, MeetingRecord, Store, TimeRange};
 use serde::{Deserialize, Serialize};
 
-use crate::events::Notify;
+use crate::events::{AppEvent, Notify};
 use crate::jobs::{JobState, JobView, Jobs, Processor};
 use crate::models::Models;
 use crate::recorder::{CaptureFactory, Recorder, RecorderStatus, StartRequest};
@@ -67,7 +70,12 @@ pub struct MeetingItem {
     pub title: String,
     pub started_at: Option<String>,
     pub duration_ms: Option<u64>,
+    /// Labels, in order of first appearance.
     pub speakers: Vec<String>,
+    /// Names the user gave some of those labels.
+    pub speaker_names: SpeakerNames,
+    /// The file a recording made elsewhere came from.
+    pub imported_from: Option<String>,
     pub segment_count: u32,
     pub frame_count: u32,
     pub status: MeetingStatus,
@@ -227,10 +235,9 @@ impl Backend {
 
         let mut items: Vec<MeetingItem> = records.into_iter().map(|r| self.item(r)).collect();
         for (id, info) in self.unindexed_folders(&indexed)? {
-            let title = info.title.unwrap_or_else(|| "Recording".into());
-            let matches = query.is_none_or(|q| title.to_lowercase().contains(&q.to_lowercase()));
-            if matches {
-                items.push(self.unprocessed_item(id, title, info.started_at));
+            let item = self.unprocessed_item(id, info);
+            if query.is_none_or(|q| item.title.to_lowercase().contains(&q.to_lowercase())) {
+                items.push(item);
             }
         }
         items.sort_by(|a, b| b.started_at.cmp(&a.started_at).then(b.id.cmp(&a.id)));
@@ -272,6 +279,8 @@ impl Backend {
             started_at: record.started_at,
             duration_ms: Some(record.duration_ms),
             speakers: record.speakers,
+            speaker_names: record.speaker_names,
+            imported_from: record.imported_from,
             segment_count: record.segment_count,
             frame_count: record.frame_count,
             status,
@@ -279,20 +288,25 @@ impl Backend {
         }
     }
 
-    fn unprocessed_item(
-        &self,
-        id: String,
-        title: String,
-        started_at: Option<String>,
-    ) -> MeetingItem {
+    fn unprocessed_item(&self, id: String, info: MeetingInfo) -> MeetingItem {
         let job = self.jobs.for_meeting(&id);
+        let mut status = self.status(&id, job.as_ref(), false);
+        // An import that failed before this run of the app has no job.
+        if status == MeetingStatus::Unprocessed
+            && let Ok(Some(request)) = ImportRequest::load(&self.data, &id)
+            && matches!(request.state, ImportState::Failed { .. })
+        {
+            status = MeetingStatus::Failed;
+        }
         MeetingItem {
-            status: self.status(&id, job.as_ref(), false),
+            status,
             id,
-            title,
-            started_at,
+            title: info.title.unwrap_or_else(|| "Recording".into()),
+            started_at: info.started_at,
             duration_ms: None,
             speakers: Vec::new(),
+            speaker_names: SpeakerNames::default(),
+            imported_from: info.imported_from,
             segment_count: 0,
             frame_count: 0,
             job,
@@ -336,12 +350,12 @@ impl Backend {
         let recording = Some(dir.recording_mp4()).filter(|p| p.is_file());
         let store = Store::open(&self.data.db_path())?;
         let Some(record) = store.meeting(id)? else {
-            let title = info.title.clone().unwrap_or_else(|| "Recording".into());
+            let language = info.language.clone();
             return Ok(MeetingDetail {
-                item: self.unprocessed_item(id.to_owned(), title, info.started_at.clone()),
+                item: self.unprocessed_item(id.to_owned(), info),
                 folder,
                 recording,
-                language: info.language,
+                language,
                 languages: Vec::new(),
                 segments: Vec::new(),
                 frames: Vec::new(),
@@ -420,6 +434,54 @@ impl Backend {
             &MeetingDir::new(folder),
             language,
         )?)
+    }
+
+    /// Names (or, with a blank name, un-names) speakers by label.
+    pub fn set_speaker_names(
+        &self,
+        id: &str,
+        names: Vec<(String, Option<String>)>,
+    ) -> anyhow::Result<SpeakerNames> {
+        let names = Store::open(&self.data.db_path())?.set_speaker_names(id, &names)?;
+        self.notify.notify(AppEvent::MeetingsChanged);
+        Ok(names)
+    }
+
+    /// Queues a recording made elsewhere and starts on it; returns the id
+    /// its meeting will have.
+    pub fn import(&self, file: &Path) -> anyhow::Result<String> {
+        let request = sakshi_app::request_import(&self.data, file, None, None, None)?;
+        self.take_imports()?;
+        Ok(request.id)
+    }
+
+    /// Queues every import waiting in `imports/`, from this app or the MCP
+    /// server. One left `processing` by an app that quit starts over; a
+    /// failed one waits for the user to retry it.
+    pub fn take_imports(&self) -> anyhow::Result<()> {
+        let mut added = false;
+        for request in ImportRequest::all(&self.data)? {
+            if matches!(request.state, ImportState::Failed { .. }) {
+                continue;
+            }
+            let meeting = self.data.meeting(&request.id);
+            added |= !meeting.info_json().is_file();
+            sakshi_app::import_folder(&self.data, &request)?;
+            let title = read_json::<MeetingInfo>(&meeting.info_json())?
+                .title
+                .unwrap_or_else(|| request.file_name());
+            self.jobs.enqueue(
+                request.id.clone(),
+                meeting.path().to_path_buf(),
+                title,
+                ProcessOptions::default(),
+                self.notify.as_ref(),
+            );
+        }
+        if added {
+            self.notify.notify(AppEvent::MeetingsChanged);
+        }
+        Ok(())
     }
 
     pub fn settings(&self) -> anyhow::Result<SettingsView> {
@@ -570,7 +632,7 @@ mod tests {
                 id: Some(id.into()),
                 title: Some(title.into()),
                 started_at: Some(started_at.into()),
-                language: None,
+                ..MeetingInfo::default()
             },
         )
         .unwrap();
@@ -602,10 +664,78 @@ mod tests {
                 id: Some(id.into()),
                 title: Some(title.into()),
                 started_at: Some(started_at.into()),
-                language: None,
+                ..MeetingInfo::default()
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn names_speakers_and_shows_the_names() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = backend(root.path(), never_called());
+        processed(
+            &backend.data,
+            A,
+            "Design review",
+            "2026-10-01T10:00:00Z",
+            "hi",
+        );
+
+        let names = backend
+            .set_speaker_names(A, vec![("Speaker 1".into(), Some("Priya".into()))])
+            .unwrap();
+        assert_eq!(names.display("Speaker 1"), "Priya");
+        assert_eq!(backend.meeting(A).unwrap().item.speaker_names, names);
+        assert!(
+            backend
+                .set_speaker_names(A, vec![("Speaker 4".into(), Some("Ravi".into()))])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn takes_up_imports_and_lists_them_while_they_wait() {
+        let root = tempfile::tempdir().unwrap();
+        let processed_ids = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = Arc::clone(&processed_ids);
+        let processor: Arc<Processor> = Arc::new(move |folder, _, _| {
+            let id = folder.file_name().unwrap().to_string_lossy().into_owned();
+            seen.lock().unwrap().push(id.clone());
+            Ok(id)
+        });
+        let backend = backend(root.path(), processor);
+        let file = root.path().join("Zoom call.mp4");
+        std::fs::write(&file, b"media").unwrap();
+
+        // Queued by the MCP server: picked up, given a folder, processed.
+        let request = sakshi_app::request_import(&backend.data, &file, None, None, None).unwrap();
+        backend.take_imports().unwrap();
+        let item = &backend.meetings(None).unwrap()[0];
+        assert_eq!(item.id, request.id);
+        assert_eq!(item.title, "Zoom call");
+        assert_eq!(item.imported_from.as_deref(), Some("Zoom call.mp4"));
+        wait_for("the import job", || {
+            processed_ids.lock().unwrap().as_slice() == [request.id.clone()]
+        });
+
+        // A failed import isn't retried by itself, and shows as failed.
+        let failed = sakshi_app::request_import(&backend.data, &file, None, None, None).unwrap();
+        ImportRequest {
+            state: ImportState::Failed {
+                error: "no audio".into(),
+            },
+            ..failed.clone()
+        }
+        .save(&backend.data)
+        .unwrap();
+        sakshi_app::import_folder(&backend.data, &failed).unwrap();
+        backend.take_imports().unwrap();
+        assert_eq!(processed_ids.lock().unwrap().len(), 1);
+        assert_eq!(
+            backend.meeting(&failed.id).unwrap().item.status,
+            MeetingStatus::Failed
+        );
     }
 
     const A: &str = "019a0000-0000-7000-8000-00000000000a";

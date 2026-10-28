@@ -70,6 +70,7 @@ pub fn run(data: &DataDir, args: ProcessArgs) -> anyhow::Result<()> {
         bleed_threshold: args.bleed_threshold,
     };
     let outcome = process_meeting(data, &args.folder, &options, &|progress| match progress {
+        Progress::Importing => eprintln!("copying the recording..."),
         // A recording that never finished, e.g. after a crash.
         Progress::Finalizing => eprintln!("finishing the interrupted recording first"),
         Progress::Stage {

@@ -1,6 +1,6 @@
 //! Plain-text rendering of transcripts and times.
 
-use sakshi_core::{Segment, VideoPause, WindowView};
+use sakshi_core::{Segment, SpeakerNames, VideoPause, WindowView};
 
 /// `m:ss` below an hour, `h:mm:ss` from an hour.
 pub(crate) fn clock(ms: u64) -> String {
@@ -33,18 +33,27 @@ pub(crate) fn pause_at(pauses: &[VideoPause], at_ms: u64) -> Option<&VideoPause>
     pauses.iter().find(|p| p.contains(at_ms))
 }
 
-/// One line per segment, with a marker whenever a different key frame is on
-/// screen, and where the video paused.
+/// One line per segment, under the speaker's name where the user gave one,
+/// with a marker whenever a different key frame is on screen, and where the
+/// video paused.
 pub(crate) fn transcript_text(
     title: &str,
     meeting_id: &str,
     segments: &[(Segment, Option<u64>)],
     pauses: &[VideoPause],
+    names: &SpeakerNames,
     next_cursor: Option<&str>,
 ) -> String {
     let mut out = format!(
         "Transcript of \"{title}\" ({meeting_id}). Times are from the start of the recording.\n"
     );
+    if !names.is_empty() {
+        let named: Vec<String> = names
+            .iter()
+            .map(|(label, name)| format!("{label} is {name}"))
+            .collect();
+        out.push_str(&format!("Named speakers: {}.\n", named.join(", ")));
+    }
     let mut on_screen = None;
     let mut in_pause = None;
     for (s, frame) in segments {
@@ -69,7 +78,7 @@ pub(crate) fn transcript_text(
         out.push_str(&format!(
             "[{}] {}: {}\n",
             clock(s.start_ms),
-            s.speaker,
+            names.display(&s.speaker.to_string()),
             s.text
         ));
     }
@@ -106,6 +115,8 @@ mod tests {
             text: text.into(),
             words: vec![],
         };
+        let mut names = SpeakerNames::default();
+        names.set("Speaker 2", Some("Priya")).unwrap();
         let text = transcript_text(
             "Standup",
             "m1",
@@ -118,16 +129,18 @@ mod tests {
                 ),
             ],
             &[],
+            &names,
             Some("2"),
         );
         assert_eq!(
             text,
             "Transcript of \"Standup\" (m1). Times are from the start of the recording.\n\
+             Named speakers: Speaker 2 is Priya.\n\
              -- key frame 0 on screen (from 0:00) --\n\
              [0:01] Speaker 1: hello\n\
              [0:02] You: hi\n\
              -- key frame 20000 on screen (from 0:20) --\n\
-             [0:21] Speaker 2: next slide\n\
+             [0:21] Priya: next slide\n\
              (more follows: call get_transcript again with cursor \"2\")\n"
         );
     }
@@ -166,6 +179,7 @@ mod tests {
                 (seg(4, 50_000, "after"), Some(45_000)),
             ],
             &pauses,
+            &SpeakerNames::default(),
             None,
         );
         assert_eq!(

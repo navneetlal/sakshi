@@ -52,6 +52,7 @@ export function when(rfc3339: string | null): string {
 }
 
 const stepNames: Record<string, string> = {
+  import: "Copy the recording",
   finalize: "Finish recording",
   "prepare-audio": "Prepare audio",
   "transcribe-system": "Transcribe the call",

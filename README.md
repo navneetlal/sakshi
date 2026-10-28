@@ -91,8 +91,10 @@ Download `Sakshi_<version>_aarch64.dmg` from the
   transcribes the recording on your Mac and shows each step as it goes.
 - **Meetings:** search titles and transcripts. Open a meeting for the
   video, the transcript with speakers (click a time to play from there),
-  key frames, and summaries saved by AI clients. Process again with
-  another language, or process a recording that never was.
+  key frames, and summaries saved by AI clients. **Name speakers** to
+  show "Priya" instead of "Speaker 1", here and to AI clients. Process
+  again with another language, or process a recording that never was.
+  **Import recording** adds one made elsewhere (see below).
 - **Models:** download the default models, or add a GGUF model from any
   Hugging Face repository.
 - **Connect:** each AI client's status and setup steps.
@@ -112,6 +114,21 @@ and so the transcript, is recorded either way. Details under
 Sakshi never summarizes. Ask your AI client to summarize a meeting; it
 reads the transcript through Sakshi and saves the summary back, where it
 shows under the meeting's Summaries.
+
+**Recordings made elsewhere.** A Zoom, Teams, or Fireflies recording, or
+any video or audio file, becomes a meeting like Sakshi's own: choose
+Import recording on the Meetings page, or ask your AI client to import the
+file (it uses `import_recording` with the file's path; the app opens in the
+background and processes it). The file is copied into Sakshi's data
+folder, so the original can go. Such a file has one mixed audio track, so
+everyone, you included, is "Speaker N"; name them to see who is who.
+
+**Speaker names.** Sakshi never guesses who a speaker is. Name them on the
+meeting page with Name speakers, or tell your AI client ("Speaker 1 is
+Priya") and it saves the name. Transcripts then show the name, in the app
+and to every AI client; a speaker you haven't named stays "Speaker N".
+Names live in the meeting's `meeting.json`, so they survive processing the
+meeting again.
 
 **Updating:** download the new release and replace the app in
 Applications, then clear the download flag again. **Uninstalling:** delete
@@ -250,7 +267,7 @@ works; 16 kHz mono WAV is used as is.
 | `frames/<ms>.jpg`, `frames.json` | Key frames (at most 1280 px wide) with their timestamps |
 | `pipeline.json` | Finished stages and the settings each ran with |
 | `work/` | Intermediate results, including the engine's raw output and the mic segments removed as bleed |
-| `meeting.json` | Gains the meeting's `id` when it is first indexed |
+| `meeting.json` | Gains the meeting's `id` when it is first indexed; also holds `speaker_names`, and `imported_from` for an import |
 | `summaries/<id>.md` | Summaries saved by MCP clients |
 
 Processing is resumable. Rerunning skips finished stages and redoes only
@@ -264,6 +281,7 @@ sakshi-cli process <folder> [--language auto|<code>] [--from <stage>] [--force]
                             [--device auto|cpu|metal|cuda|vulkan]
                             [--asr-model <id>] [--diar-model <id>]
                             [--bleed-threshold <0..1>]
+sakshi-cli import <file> [--title <text>] [--started-at <time>] [--language auto|<code>]
 sakshi-cli meetings list [--query <text>] [--limit <n>]
 sakshi-cli models list
 sakshi-cli models pull [<id>...] [--yes]
@@ -283,18 +301,21 @@ against the model's own language table, for example `hi`, `hi-IN`, or
 
 `sakshi-mcp` reads the meeting index and folders directly, so it works
 whether or not anything else is running. It only reads, except for
-`save_summary`.
+`save_summary`, `set_speaker_names`, and `import_recording`, which leaves
+the file for the app to process.
 
 | Tool | |
 |---|---|
 | `list_meetings(since?, until?, query?, limit?)` | Meetings, most recent first |
-| `get_meeting(meeting_id)` | Title, times, duration, speaker labels, frame count, where the video paused, saved summaries |
-| `get_transcript(meeting_id, start_ms?, end_ms?, format?, include_words?, cursor?)` | Segments with speakers, times, the key frame on screen, and whether the video was paused, in pages |
+| `get_meeting(meeting_id)` | Title, times, duration, speakers with any names, frame count, where the video paused, saved summaries; for an import still running, how it's going |
+| `get_transcript(meeting_id, start_ms?, end_ms?, format?, include_words?, cursor?)` | Segments with speakers (names where given), times, the key frame on screen, and whether the video was paused, in pages |
 | `get_frames(meeting_id, start_ms?, end_ms?, max?)` | Key frames as images (up to 16) |
 | `get_frame_at(meeting_id, at_ms)` | The key frame on screen at a moment |
 | `search_transcripts(query, limit?)` | Matching segments across meetings |
 | `save_summary(meeting_id, markdown, title?, author_model?)` | Stores a summary the client wrote |
 | `list_summaries(meeting_id)` | Saved summaries with their Markdown |
+| `set_speaker_names(meeting_id, names)` | Names speakers by label, e.g. `{"Speaker 1": "Priya"}`; an empty name removes one |
+| `import_recording(path, title?, started_at?, language?)` | Queues a recording made elsewhere for the app; returns the meeting's id at once |
 
 The quickest setup is the app's Connect page, or:
 
@@ -402,6 +423,12 @@ Hindi clip from FLEURS, both CC BY 4.0. See
   published design throttles hidden windows the same way.
 - `Sakshi.app` isn't notarized, so macOS blocks it the first time until
   you clear its download flag (see [Install](#install)).
+- An imported recording has one mixed track, so diarization alone tells
+  the speakers apart, and it can merge two voices: four voices in the AMI
+  fixture came out as three speakers. Naming them, or giving two labels
+  the same name, is how to fix it up.
+- An imported audio-only file has no player in the app yet, so its
+  transcript times can't be played.
 
 ## Planned
 

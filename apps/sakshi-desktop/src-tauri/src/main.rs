@@ -12,7 +12,9 @@ mod recorder;
 #[cfg(test)]
 mod test_util;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use backend::{
@@ -24,11 +26,21 @@ use models::{InspectedModel, ModelView};
 use recorder::{CaptureFactory, RecorderStatus, StartRequest};
 use sakshi_app::mcp_setup::{Client, InstallOutcome};
 use sakshi_capture::Source;
-use sakshi_core::{DataDir, Language};
+use sakshi_core::{DataDir, Language, SpeakerNames};
 use tauri::{Manager, State};
+use tauri_plugin_dialog::DialogExt;
 use tracing_subscriber::EnvFilter;
 
 type Shared<'a> = State<'a, Arc<Backend>>;
+
+/// How often the app looks for imports the MCP server queued.
+const IMPORT_POLL: Duration = Duration::from_secs(2);
+
+/// What the import dialog offers; ffmpeg reads more, and anything it can't
+/// is reported when the import runs.
+const RECORDING_TYPES: &[&str] = &[
+    "mp4", "mov", "m4v", "mkv", "webm", "avi", "m4a", "mp3", "wav", "aac", "ogg", "opus", "flac",
+];
 
 /// Runs `f` off the async runtime: most commands touch the disk, the
 /// database, or the OS's capture APIs, which can block.
@@ -167,6 +179,40 @@ async fn set_meeting_language(
     .await
 }
 
+/// Names speakers by label; a blank name removes one.
+#[tauri::command]
+async fn set_speaker_names(
+    backend: Shared<'_>,
+    id: String,
+    names: BTreeMap<String, String>,
+) -> Result<SpeakerNames, String> {
+    let names = names.into_iter().map(|(l, n)| (l, Some(n))).collect();
+    blocking(&backend, move |b| b.set_speaker_names(&id, names)).await
+}
+
+/// Asks for a recording made elsewhere and imports it. Returns the new
+/// meeting's id, or nothing if the user cancelled.
+#[tauri::command]
+async fn import_recording(
+    app: tauri::AppHandle,
+    backend: Shared<'_>,
+) -> Result<Option<String>, String> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title("Import a recording")
+            .add_filter("Video or audio", RECORDING_TYPES)
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let Some(file) = picked else {
+        return Ok(None);
+    };
+    let file = file.into_path().map_err(|e| e.to_string())?;
+    blocking(&backend, move |b| b.import(&file)).await.map(Some)
+}
+
 #[tauri::command]
 async fn reveal_meeting(backend: Shared<'_>, id: String) -> Result<(), String> {
     blocking(&backend, move |b| {
@@ -264,6 +310,7 @@ fn main() {
         .with_writer(std::io::stderr)
         .init();
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -275,13 +322,24 @@ fn main() {
             app.asset_protocol_scope()
                 .allow_directory(&meetings, true)?;
             let capture: Arc<CaptureFactory> = Arc::new(sakshi_capture::platform);
-            let backend = Backend::new(
+            let backend = Arc::new(Backend::new(
                 data.clone(),
                 capture,
                 processor(data),
                 Arc::new(app.handle().clone()),
-            );
-            app.manage(Arc::new(backend));
+            ));
+            app.manage(Arc::clone(&backend));
+            // Imports the MCP server queued, or that the last run left.
+            std::thread::Builder::new()
+                .name("sakshi-imports".into())
+                .spawn(move || {
+                    loop {
+                        if let Err(e) = backend.take_imports() {
+                            tracing::warn!("looking for imports: {e:#}");
+                        }
+                        std::thread::sleep(IMPORT_POLL);
+                    }
+                })?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -299,6 +357,8 @@ fn main() {
             get_meeting,
             process_meeting,
             set_meeting_language,
+            set_speaker_names,
+            import_recording,
             reveal_meeting,
             list_jobs,
             list_models,

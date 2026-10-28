@@ -43,7 +43,7 @@ async fn serves_meetings_over_stdio() {
 
     let info = client.peer_info().unwrap();
     assert_eq!(info.server_info.as_ref().unwrap().name, "sakshi");
-    assert_eq!(client.list_all_tools().await.unwrap().len(), 8);
+    assert_eq!(client.list_all_tools().await.unwrap().len(), 10);
 
     let result = client
         .call_tool(

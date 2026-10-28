@@ -36,6 +36,9 @@ pub enum StoreError {
     #[error("no meeting with id {0}")]
     UnknownMeeting(String),
 
+    #[error("{label:?} isn't a speaker in this meeting; its speakers are {speakers}")]
+    UnknownSpeaker { label: String, speakers: String },
+
     #[error("invalid summary: {0}")]
     InvalidSummary(String),
 }

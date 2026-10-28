@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
-use crate::Language;
+use crate::{Error, Language};
 
 /// Contents of a meeting's `meeting.json`. Every field is optional, so a
 /// bare folder of recordings is a valid meeting.
@@ -15,6 +17,58 @@ pub struct MeetingInfo {
     pub started_at: Option<String>,
     /// Pins this meeting's language, overriding [`Settings::language`].
     pub language: Option<Language>,
+    /// Names the user gave the meeting's speakers.
+    pub speaker_names: SpeakerNames,
+    /// The file a recording made elsewhere (Zoom, Fireflies, ...) was
+    /// imported from: its name only, never its path.
+    pub imported_from: Option<String>,
+}
+
+/// Names for a meeting's speakers, keyed by label ("Speaker 1", "You").
+/// Sakshi never guesses names: these come from the user, or a client acting
+/// for them. A label without a name shows as itself, and two labels may
+/// share a name when diarization split one person in two.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SpeakerNames(BTreeMap<String, String>);
+
+impl SpeakerNames {
+    /// Longest name accepted, in characters.
+    pub const MAX_CHARS: usize = 80;
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn get(&self, label: &str) -> Option<&str> {
+        self.0.get(label).map(String::as_str)
+    }
+
+    /// The name given to `label`, or the label itself.
+    pub fn display<'a>(&'a self, label: &'a str) -> &'a str {
+        self.get(label).unwrap_or(label)
+    }
+
+    /// `(label, name)` pairs in label order.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.0.iter().map(|(l, n)| (l.as_str(), n.as_str()))
+    }
+
+    /// Names `label`, or removes its name when `name` is `None` or blank.
+    pub fn set(&mut self, label: &str, name: Option<&str>) -> Result<(), Error> {
+        match name.map(str::trim).filter(|n| !n.is_empty()) {
+            None => {
+                self.0.remove(label);
+            }
+            Some(n) if n.chars().count() > Self::MAX_CHARS || n.contains(['\n', '\r']) => {
+                return Err(Error::InvalidSpeakerName(n.to_owned()));
+            }
+            Some(n) => {
+                self.0.insert(label.to_owned(), n.to_owned());
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Global settings, stored as `config.json` in the data directory.
@@ -124,6 +178,37 @@ mod tests {
         assert!(pause.contains(1_000) && pause.contains(1_999) && !pause.contains(2_000));
         assert!(pause.overlaps(0, 1_001) && pause.overlaps(1_999, 5_000));
         assert!(!pause.overlaps(0, 1_000) && !pause.overlaps(2_000, 3_000));
+    }
+
+    #[test]
+    fn speaker_names_set_clear_and_fall_back_to_the_label() {
+        let mut names = SpeakerNames::default();
+        names.set("Speaker 1", Some("  Priya ")).unwrap();
+        names.set("Speaker 2", Some("Priya")).unwrap();
+        assert_eq!(names.display("Speaker 1"), "Priya");
+        assert_eq!(names.display("Speaker 3"), "Speaker 3");
+
+        names.set("Speaker 2", Some("   ")).unwrap();
+        names.set("Speaker 9", None).unwrap();
+        assert_eq!(names.iter().collect::<Vec<_>>(), [("Speaker 1", "Priya")]);
+
+        assert!(names.set("You", Some("a\nb")).is_err());
+        assert!(names.set("You", Some(&"x".repeat(81))).is_err());
+        assert_eq!(names.get("You"), None);
+    }
+
+    #[test]
+    fn older_meeting_json_has_no_names_and_names_round_trip() {
+        let info: MeetingInfo = serde_json::from_str(r#"{"title": "Standup"}"#).unwrap();
+        assert!(info.speaker_names.is_empty());
+        assert_eq!(info.imported_from, None);
+
+        let json = r#"{"speaker_names": {"Speaker 1": "Priya"}, "imported_from": "call.mp4"}"#;
+        let info: MeetingInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.speaker_names.display("Speaker 1"), "Priya");
+        let back: MeetingInfo =
+            serde_json::from_str(&serde_json::to_string(&info).unwrap()).unwrap();
+        assert_eq!(back, info);
     }
 
     #[test]

@@ -8,5 +8,5 @@ mod keyframes;
 
 pub use audio::{WavInfo, wav_info};
 pub use error::MediaError;
-pub use ffmpeg::{FFMPEG_ENV, Ffmpeg, FfmpegVersion, MIN_FFMPEG};
+pub use ffmpeg::{FFMPEG_ENV, Ffmpeg, FfmpegVersion, MIN_FFMPEG, MediaInfo};
 pub use keyframes::{KeyframeConfig, KeyframeSelector, hamming};

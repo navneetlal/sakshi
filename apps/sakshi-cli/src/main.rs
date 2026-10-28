@@ -1,4 +1,5 @@
 mod config;
+mod import;
 mod mcp;
 mod meetings;
 mod models;
@@ -31,6 +32,9 @@ enum Command {
     Record(record::RecordArgs),
     /// Transcribe, diarize, and extract key frames from a meeting folder.
     Process(process::ProcessArgs),
+    /// Import a recording made elsewhere (Zoom, Fireflies, ...), then
+    /// process it.
+    Import(import::ImportArgs),
     /// List processed meetings.
     #[command(subcommand)]
     Meetings(meetings::MeetingsCommand),
@@ -58,6 +62,7 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Record(args) => record::run(&data, args),
         Command::Process(args) => process::run(&data, args),
+        Command::Import(args) => import::run(&data, args),
         Command::Meetings(cmd) => meetings::run(&data, cmd),
         Command::Models(cmd) => models::run(&data, cmd),
         Command::Config(cmd) => config::run(&data, cmd),

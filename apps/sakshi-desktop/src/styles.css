@@ -488,6 +488,10 @@ button:focus-visible {
 .search {
   margin-bottom: 12px;
 }
+.list-pane > .import {
+  width: 100%;
+  margin-bottom: 10px;
+}
 
 /* Record */
 
