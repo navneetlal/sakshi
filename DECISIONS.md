@@ -907,8 +907,10 @@ considered. Newest entries go at the bottom.
     diarization alone separates them;
   - an audio-only WAV (the FLEURS Hindi fixture) imported through the
     Meetings page's file dialog: two speakers, no video, no key frames.
-  - Not seen live: the MCP server starting the bundled app (`open -g`),
-    which needs the installed bundle.
+  - with the bundle installed in `/Applications` and the app not
+    running, the bundle's `sakshi-mcp` answered `import_recording`
+    with "The Sakshi app is importing it in the background" and the app
+    started from `/Applications` without coming to the front.
 - **Alternatives:** the MCP server processing the file itself (stops
   with the client, and runs alongside the app's own jobs); indexing the
   file in place; accepting download URLs.
