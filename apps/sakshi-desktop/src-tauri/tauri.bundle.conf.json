@@ -4,6 +4,9 @@
     "externalBin": ["bundle/binaries/sakshi-mcp"],
     "resources": {
       "bundle/nemo-speech/": "nemo-speech/"
+    },
+    "macOS": {
+      "signingIdentity": "Sakshi Code Signing"
     }
   }
 }

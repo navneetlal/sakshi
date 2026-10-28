@@ -131,7 +131,11 @@ Names live in the meeting's `meeting.json`, so they survive processing the
 meeting again.
 
 **Updating:** download the new release and replace the app in
-Applications, then clear the download flag again. **Uninstalling:** delete
+Applications, then clear the download flag again. Screen Recording and
+Microphone access carry over. From 0.2.1 or earlier, which were signed
+differently, the old permissions look on but don't apply: once, remove
+Sakshi from both lists in System Settings > Privacy & Security (−), then
+click **Allow** on the Record page again. **Uninstalling:** delete
 the app. Models, settings, and meetings stay in
 `~/Library/Application Support/Sakshi` until you delete that folder.
 
@@ -207,9 +211,12 @@ pnpm run bundle         # -> target/release/bundle/macos/Sakshi.app
 so it works on any Apple Silicon Mac with macOS 14+ and FFmpeg installed.
 AI clients are set up to launch the `sakshi-mcp` inside it, so if you move
 the app, the Connect page shows the clients as set up with a different
-command until you set them up again. The app is ad-hoc signed, not signed
-with a Developer ID or notarized; see [Install](#install) for opening it on
-another Mac.
+command until you set them up again. The app is signed with a self-signed
+certificate, **Sakshi Code Signing**, from your login keychain, so macOS
+keeps its permissions from one release to the next (DECISIONS D38); it
+isn't signed with a Developer ID or notarized, see [Install](#install) for
+opening it on another Mac. Without that certificate, build with
+`APPLE_SIGNING_IDENTITY=- pnpm run bundle` to sign ad hoc.
 
 To publish a release, attach the DMG and its SHA-256 to a GitHub release
 for the tag `v<version>`. The DMG holds the app beside an Applications

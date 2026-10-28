@@ -611,11 +611,11 @@ considered. Newest entries go at the bottom.
   Only the libraries the engine loads are copied: the `@rpath`
   references, followed with `otool -L`, as real files under the names the
   loader asks for (10 libraries, 13 MB, instead of 26 MB with every
-  version symlink copied). The bundle is ad-hoc signed as a whole (signing
-  identity `-`), so its seal covers the engine. The bundle-only settings
-  live in their own config file, because Tauri's build script requires
-  `externalBin` and resource files to exist; ordinary builds, tests, and
-  CI don't need the staged files.
+  version symlink copied). The bundle is signed as a whole (ad hoc,
+  signing identity `-`, until D38), so its seal covers the engine. The
+  bundle-only settings live in their own config file, because Tauri's
+  build script requires `externalBin` and resource files to exist;
+  ordinary builds, tests, and CI don't need the staged files.
 - **Why:** an installed app can't depend on a development checkout. The
   first `Sakshi.app` built in M4 found its helpers only through
   `target/`, which the user caught.
@@ -855,7 +855,7 @@ considered. Newest entries go at the bottom.
   Sakshi showed as on in System Settings (the entry still held the old
   cdhash), and asking again didn't replace it; only removing the entry
   (`tccutil reset ScreenCapture app.sakshi.desktop`, or − in Settings)
-  did. A stable signing identity fixes it; not done yet.
+  did. A stable signing identity fixes it (D38).
 - **Alternatives:** turning the hardened runtime off: works ad hoc, but
   has to come back for notarization.
 
@@ -941,3 +941,44 @@ considered. Newest entries go at the bottom.
 - **Alternatives:** rewriting `transcript.json` with names (lost on
   reprocessing, and no way back to the label); names across meetings (the
   same label in two meetings isn't the same person).
+
+## D38. Releases are signed with a self-signed certificate
+
+- **Decision:** `pnpm run bundle` signs with **Sakshi Code Signing**, a
+  self-signed code signing certificate in the maintainer's login keychain
+  (RSA 3072, valid 2026-10-28 to 2046-10-23, SHA-1 `C12335DE…601A04`).
+  `tauri.bundle.conf.json` names it; `tauri.conf.json` keeps `-` for other
+  builds. The app's designated requirement becomes `identifier
+  "app.sakshi.desktop" and certificate root = H"c12335de…601a04"`, the
+  same for every build signed with that key, so a Screen Recording or
+  Microphone grant made for one release holds for the next. The hardened
+  runtime and D35's entitlement are unchanged; `sakshi-mcp` is signed
+  with the same key, and the engine in `Resources/` keeps its own ad-hoc
+  signature under the bundle's seal, as before.
+  - **The key is the release identity.** Lose it, and every user's next
+    update asks for access again, once, as an ad-hoc update does now.
+    Back it up as a `.p12` (Keychain Access > My Certificates > Export).
+  - **Without the key** the build stops at signing ("failed to sign
+    app"). `APPLE_SIGNING_IDENTITY=- pnpm run bundle` signs ad hoc instead.
+  - **Trust:** the certificate isn't marked trusted, and needn't be:
+    `codesign` signs with it (`security find-identity` lists it with
+    `CSSMERR_TP_NOT_TRUSTED`), and a requirement on the certificate's hash
+    doesn't depend on trust. Gatekeeper rejects the app as it did the
+    ad-hoc one (`spctl`: rejected), so installing is unchanged.
+  - **Updating from an ad-hoc build:** the old grants hold the old cdhash
+    and stay switched on without applying (D35). Remove Sakshi from Screen
+    Recording and Microphone in System Settings (−), or run `tccutil reset
+    ScreenCapture app.sakshi.desktop` and `tccutil reset Microphone
+    app.sakshi.desktop`, then allow again. This happens once.
+- **Why:** each ad-hoc build is a new app to TCC (D35), so every update
+  lost both permissions and left entries that looked on.
+- **Verified (macOS 27, 2026-10-28):** the bundle built with the
+  certificate passes `codesign --verify --deep --strict`; `sakshi` and
+  `sakshi-mcp` carry `flags runtime` and the requirement above, and the
+  entitlement is present. A copy changed by one resource and re-signed
+  with the same key had a new cdhash and still satisfied the installed
+  build's requirement. The same copy signed ad hoc didn't.
+- **Alternatives:** a Developer ID certificate (a paid Apple Developer
+  Program membership, also needed for notarization, still Later); a
+  certificate per build machine (each one is a new app to TCC); marking
+  the certificate trusted (a password prompt for no gain).
