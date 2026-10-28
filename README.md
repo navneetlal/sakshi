@@ -75,9 +75,9 @@ Download `Sakshi_<version>_aarch64.dmg` from the
 2. **Settings:** under Processing tools, FFmpeg, the speech engine, and the
    models should all show a check mark. If FFmpeg is missing, install it
    and reopen the page.
-3. **Record:** the first time, macOS asks for **Screen Recording** and
-   **Microphone** access. Turn Sakshi on under System Settings > Privacy &
-   Security for each, then quit and reopen Sakshi.
+3. **Record:** the first time, click **Allow** for **Screen Recording**
+   and **Microphone**, and macOS asks for each. Turn Sakshi on under
+   System Settings > Privacy & Security, then quit and reopen Sakshi.
 4. **Connect** (optional): to let Claude or another AI client read your
    meetings, open Connect and follow the steps for your client. Sakshi can
    add itself to Claude Desktop and Cursor for you.

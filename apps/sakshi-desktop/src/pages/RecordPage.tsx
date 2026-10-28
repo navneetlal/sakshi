@@ -202,7 +202,7 @@ function Setup() {
         </Notice>
       )}
       {permissions && !screenGranted && (
-        <ScreenPermission permissions={permissions} onChange={setPermissions} />
+        <ScreenPermission onChange={setPermissions} />
       )}
       <ErrorNotice error={error} />
 
@@ -335,37 +335,32 @@ function SourceList({
   );
 }
 
-function ScreenPermission({
-  permissions,
-  onChange,
-}: {
-  permissions: Permissions;
-  onChange: (p: Permissions) => void;
-}) {
+// macOS reports "never asked" as denied for Screen Recording, and lists an
+// app in System Settings only once it has asked, so always ask first.
+function ScreenPermission({ onChange }: { onChange: (p: Permissions) => void }) {
   const [asked, setAsked] = useState(false);
   return (
     <Notice
       tone="warn"
       title="Sakshi needs Screen Recording access"
       actions={
-        <>
-          {!asked && permissions.screen === "not_determined" && (
-            <button
-              className="btn primary"
-              onClick={() =>
-                void api.requestPermission("screen").then((p) => {
-                  setAsked(true);
-                  onChange(p);
-                })
-              }
-            >
-              Allow
-            </button>
-          )}
+        asked ? (
           <button className="btn" onClick={() => void api.openPrivacySettings("screen")}>
             Open System Settings
           </button>
-        </>
+        ) : (
+          <button
+            className="btn primary"
+            onClick={() =>
+              void api
+                .requestPermission("screen")
+                .then(onChange)
+                .finally(() => setAsked(true))
+            }
+          >
+            Allow
+          </button>
+        )
       }
     >
       Turn Sakshi on under Privacy &amp; Security › Screen &amp; System Audio Recording, then quit

@@ -803,3 +803,28 @@ considered. Newest entries go at the bottom.
 - **Alternatives:** a `video_pauses` table (more joins for a handful of
   rows per meeting); reading `capture.json` from the MCP server on every
   call (the index exists so queries don't touch the folders).
+
+## D34. The app asks for Screen Recording before pointing at Settings
+
+- **Found:** the first clean install from the 0.2.0 DMG offered only
+  Open System Settings on the Record page, and Sakshi wasn't in the
+  Screen & System Audio Recording list there to turn on. The Allow button
+  showed only for `not_determined`, which Screen Recording never reports:
+  `CGPreflightScreenCaptureAccess` answers yes or no, so "never asked"
+  comes back as `denied`. macOS lists an app only after it calls
+  `CGRequestScreenCaptureAccess`. Development builds had been granted
+  before, which hid it; the CLI always asks first (D21), so it never had
+  the problem.
+- **Decision:** the notice shows Allow until it's clicked, whatever the
+  state, then Open System Settings. Asking shows the system prompt the
+  first time and adds Sakshi to the list, switched off; after that it
+  returns without a prompt, so the click costs nothing once denied.
+- **Verified (macOS 27, Apple Silicon, 2026-10-28):** the 0.2.1 DMG
+  installed into `/Applications` after `tccutil reset ScreenCapture
+  app.sakshi.desktop`. The Record page showed Allow; pressing it brought
+  up "Sakshi.app would like to record this computer's screen and audio",
+  the notice switched to Open System Settings, and Sakshi.app was in the
+  list, switched off.
+- **Alternatives:** asking at launch (a prompt before the user has chosen
+  to record); asking from Open System Settings as well (the system prompt
+  and the Settings window at once).
