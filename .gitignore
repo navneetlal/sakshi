@@ -1,2 +1,6 @@
 /target
 .DS_Store
+
+# The release signing key's backup (DECISIONS D38). Never commit it.
+/.signing/
+*.p12
