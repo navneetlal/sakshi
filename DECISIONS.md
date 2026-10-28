@@ -977,7 +977,11 @@ considered. Newest entries go at the bottom.
   `sakshi-mcp` carry `flags runtime` and the requirement above, and the
   entitlement is present. A copy changed by one resource and re-signed
   with the same key had a new cdhash and still satisfied the installed
-  build's requirement. The same copy signed ad hoc didn't.
+  build's requirement. The same copy signed ad hoc didn't. End to end:
+  Screen Recording was granted once to the installed build (TCC stored
+  the certificate requirement, not a cdhash); that copy, then a fresh
+  `pnpm run bundle`, each installed over it (three cdhashes in all),
+  opened straight to the window list without asking again.
 - **Alternatives:** a Developer ID certificate (a paid Apple Developer
   Program membership, also needed for notarization, still Later); a
   certificate per build machine (each one is a new app to TCC); marking
