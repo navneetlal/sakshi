@@ -828,3 +828,30 @@ considered. Newest entries go at the bottom.
 - **Alternatives:** asking at launch (a prompt before the user has chosen
   to record); asking from Open System Settings as well (the system prompt
   and the Settings window at once).
+
+## D35. The app carries the microphone entitlement
+
+- **Found:** on the clean 0.2.1 install the Record page said "Microphone
+  access is off", and Sakshi wasn't under Privacy & Security >
+  Microphone. Tauri signs the bundle with the hardened runtime (`flags
+  adhoc,runtime`), and under it the microphone needs
+  `com.apple.security.device.audio-input`; without it macOS answers
+  denied without asking or listing the app. No bundle had entitlements,
+  so the app never recorded the microphone; development runs got it
+  through the terminal (D21), and D30's check processed a file rather than
+  recording. Screen Recording needs no entitlement.
+- **Decision:** `src-tauri/Entitlements.plist`, holding only
+  `device.audio-input`, is the bundle's `macOS.entitlements`. The hardened
+  runtime stays on, since notarization requires it.
+- **Verified (macOS 27, 2026-10-28):** the rebuilt bundle's signature
+  carries the entitlement; installed from its DMG, the Record page offered
+  Allow for the microphone and macOS asked.
+- **Also found:** each ad-hoc build is its own app to TCC. Its designated
+  requirement is `cdhash H"…"`, so a grant made for one build doesn't
+  match the next. After an update, Screen Recording stayed off although
+  Sakshi showed as on in System Settings (the entry still held the old
+  cdhash), and asking again didn't replace it; only removing the entry
+  (`tccutil reset ScreenCapture app.sakshi.desktop`, or − in Settings)
+  did. A stable signing identity fixes it; not done yet.
+- **Alternatives:** turning the hardened runtime off: works ad hoc, but
+  has to come back for notarization.
