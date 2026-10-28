@@ -58,6 +58,45 @@ pub fn prepare() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Rewrites this version's DMG without the signature Tauri gave it.
+/// Gatekeeper checks a signed disk image when a downloaded one is opened,
+/// and without notarization refuses it outright; an unsigned one opens,
+/// and the app inside keeps its own signature (DECISIONS.md D38).
+pub fn finish() -> anyhow::Result<()> {
+    let dir = workspace_root().join("target/release/bundle/dmg");
+    let prefix = format!("Sakshi_{}_", env!("CARGO_PKG_VERSION"));
+    let dmgs: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .with_context(|| format!("reading {}", dir.display()))?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| {
+            let name = p.file_name().unwrap_or_default().to_string_lossy();
+            name.starts_with(&prefix) && name.ends_with(".dmg") && !name.ends_with(".unsigned.dmg")
+        })
+        .collect();
+    if dmgs.is_empty() {
+        bail!(
+            "no {prefix}*.dmg in {}; run `pnpm run bundle`",
+            dir.display()
+        );
+    }
+    for dmg in dmgs {
+        let unsigned = dmg.with_extension("unsigned.dmg");
+        if unsigned.exists() {
+            std::fs::remove_file(&unsigned)?;
+        }
+        // Converting copies the image's contents into a new, unsigned one.
+        run(Command::new("hdiutil")
+            .args(["convert", "-quiet"])
+            .arg(&dmg)
+            .args(["-format", "UDZO", "-imagekey", "zlib-level=9", "-o"])
+            .arg(&unsigned))?;
+        std::fs::rename(&unsigned, &dmg)?;
+        println!("{}: unsigned the disk image", dmg.display());
+    }
+    Ok(())
+}
+
 fn host_triple() -> anyhow::Result<String> {
     let out = Command::new("rustc")
         .arg("-vV")

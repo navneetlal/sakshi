@@ -215,8 +215,10 @@ command until you set them up again. The app is signed with a self-signed
 certificate, **Sakshi Code Signing**, from your login keychain, so macOS
 keeps its permissions from one release to the next (DECISIONS D38); it
 isn't signed with a Developer ID or notarized, see [Install](#install) for
-opening it on another Mac. Without that certificate, build with
-`APPLE_SIGNING_IDENTITY=- pnpm run bundle` to sign ad hoc.
+opening it on another Mac. The DMG itself is left unsigned, because
+Gatekeeper refuses to open a signed disk image that isn't notarized.
+Without that certificate, build with `APPLE_SIGNING_IDENTITY=- pnpm run
+bundle` to sign ad hoc.
 
 To publish a release, attach the DMG and its SHA-256 to a GitHub release
 for the tag `v<version>`. The DMG holds the app beside an Applications

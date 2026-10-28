@@ -965,6 +965,16 @@ considered. Newest entries go at the bottom.
     `CSSMERR_TP_NOT_TRUSTED`), and a requirement on the certificate's hash
     doesn't depend on trust. Gatekeeper rejects the app as it did the
     ad-hoc one (`spctl`: rejected), so installing is unchanged.
+  - **The DMG stays unsigned.** Tauri signs the disk image with the same
+    identity. Gatekeeper checks a signed disk image when a downloaded one
+    is opened and, without notarization, refuses it ("Apple could not
+    verify … Not Opened"); on the maintainer's Mac, whose Gatekeeper
+    setting comes from a profile, Open Anyway didn't get past it either.
+    An unsigned image isn't checked, as with 0.2.0. `codesign` can't
+    remove a disk image's signature, so `cargo xtask finish-bundle`, run
+    last by `pnpm run bundle`, rewrites the DMG with `hdiutil convert`.
+    Found on the published 0.3.0; the unsigned DMG that replaces its
+    download holds the identical app.
   - **Updating from an ad-hoc build:** the old grants hold the old cdhash
     and stay switched on without applying (D35). Remove Sakshi from Screen
     Recording and Microphone in System Settings (−), or run `tccutil reset
@@ -981,7 +991,9 @@ considered. Newest entries go at the bottom.
   Screen Recording was granted once to the installed build (TCC stored
   the certificate requirement, not a cdhash); that copy, then a fresh
   `pnpm run bundle`, each installed over it (three cdhashes in all),
-  opened straight to the window list without asking again.
+  opened straight to the window list without asking again. Disk images,
+  marked as downloaded (a quarantine flag): the published, signed 0.3.0
+  DMG was refused on opening; the same image converted unsigned mounted.
 - **Alternatives:** a Developer ID certificate (a paid Apple Developer
   Program membership, also needed for notarization, still Later); a
   certificate per build machine (each one is a new app to TCC); marking

@@ -42,6 +42,10 @@ enum Command {
     /// `apps/sakshi-desktop/src-tauri/bundle/` for the app bundle (macOS).
     /// Run by `pnpm run bundle`; needs `fetch-sidecar` first.
     PrepareBundle,
+    /// Strip the signature Tauri put on the DMG, which Gatekeeper refuses
+    /// without notarization; the app inside stays signed. Run by `pnpm run
+    /// bundle` after `tauri build`.
+    FinishBundle,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -50,5 +54,6 @@ fn main() -> anyhow::Result<()> {
         Command::Fixtures => fixtures::generate(),
         Command::BrandIcons { write } => brand::run(write),
         Command::PrepareBundle => bundle::prepare(),
+        Command::FinishBundle => bundle::finish(),
     }
 }
