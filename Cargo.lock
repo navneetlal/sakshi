@@ -4365,7 +4365,7 @@ checksum = "3944826ff8fa8093089aba3acb4ef44b9446a99a16f3bf4e74af3f77d340ab7d"
 
 [[package]]
 name = "sakshi-app"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "dirs 7.0.0",
  "jiff",
@@ -4386,7 +4386,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-asr"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "sakshi-core",
  "sakshi-models",
@@ -4399,7 +4399,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-capture"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "block2",
  "dispatch2",
@@ -4424,7 +4424,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-cli"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4444,7 +4444,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "dirs 7.0.0",
  "serde",
@@ -4455,7 +4455,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-desktop"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "sakshi-app",
@@ -4480,7 +4480,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-mcp"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4501,7 +4501,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-mcp-server"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4519,7 +4519,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-media"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "hound",
  "image",
@@ -4532,7 +4532,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-models"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "hex",
  "hf-hub",
@@ -4548,7 +4548,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-pipeline"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "hound",
  "sakshi-asr",
@@ -4563,7 +4563,7 @@ dependencies = [
 
 [[package]]
 name = "sakshi-store"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "jiff",
  "rusqlite",
@@ -7129,7 +7129,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
